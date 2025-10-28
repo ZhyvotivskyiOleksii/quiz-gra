@@ -1,0 +1,96 @@
+{
+  "Hero": {
+    "title": "QuizTime: Sprawdź swoją wiedzę i przewiduj przyszłość",
+    "description": "Dołącz do gry, w której liczy się nie tylko wiedza historyczna, ale i zdolność przewidywania. Odpowiadaj na pytania, zdobywaj punkty i pnij się w rankingu.",
+    "cta_start": "Zacznij grać",
+    "cta_login": "Zaloguj się",
+    "card_text": "Testuj swoją wiedzę i intuicję"
+  },
+  "Header": {
+    "login": "Zaloguj się"
+  },
+  "Features": {
+    "subtitle": "Kluczowe Funkcje",
+    "title": "Wszystko, czego potrzebujesz do dobrej zabawy",
+    "description": "Nasza platforma oferuje unikalne połączenie quizów historycznych i predykcyjnych, rankingi w czasie rzeczywistym i wiele więcej.",
+    "historical_title": "Pytania Historyczne",
+    "historical_desc": "Sprawdź swoją wiedzę z różnych dziedzin. Odpowiedzi są znane, liczy się szybkość i precyzja.",
+    "predictive_title": "Pytania Predykcyjne",
+    "predictive_desc": "Przewiduj wyniki przyszłych wydarzeń. Twoja odpowiedź zostanie zweryfikowana, gdy wydarzenie się zakończy.",
+    "leaderboards_title": "Rozliczenia i Rankingi",
+    "leaderboards_desc": "Śledź swoje postępy, zdobywaj punkty za poprawne odpowiedzi i rywalizuj z innymi graczami o miano najlepszego."
+  },
+  "Login": {
+    "title": "Zaloguj się"
+  },
+  "LoginForm": {
+    "email_label": "Email",
+    "password_label": "Hasło",
+    "phone_label": "Telefon",
+    "remember_me_label": "Pozostaw mnie zalogowanym",
+    "forgot_password_link": "Zapomniałem hasła",
+    "age_confirmation_label_part1": "Mam ukończone 18 lat i akceptuję",
+    "age_confirmation_link": "Regulamin",
+    "marketing_consent_label": "Zgoda marketingowa – (opcjonalnie)",
+    "login_button": "ZALOGUJ SIĘ",
+    "register_button": "REJESTRACJA",
+    "or_separator": "LUB",
+    "phone_button": "Telefon",
+    "phone_login_title": "Logowanie przez SMS",
+    "back_to_email": "Wróć do e-mail",
+    "send_code_button": "Wyślij kod",
+    "verify_code_button": "Potwierdź kod",
+    "otp_code_label": "Kod z SMS",
+    "toast_success": "Zalogowano pomyślnie!",
+    "otp_sent_toast": "Wysłano kod SMS.",
+    "otp_invalid_toast": "Nieprawidłowy kod.",
+    "validation": {
+      "email_required": "Email jest wymagany.",
+      "email_invalid": "Nieprawidłowy adres email.",
+      "password_required": "Hasło jest wymagane.",
+      "age_confirmation_required": "Musisz potwierdzić, że masz ukończone 18 lat i akceptujesz regulamin."
+    }
+  },
+  "Register": {
+    "title": "Dołącz do QuizTime",
+    "description": "Utwórz konto, aby zacząć rywalizację.",
+    "switch_to_login": "Masz już konto? Zaloguj się"
+  },
+  "RegisterForm": {
+    "firstName_label": "Imię",
+    "lastName_label": "Nazwisko",
+    "email_label": "Email",
+    "phone_label": "Telefon",
+    "password_label": "Hasło",
+    "confirm_password_label": "Powtórz hasło",
+    "age_confirmation_label_part1": "Mam ukończone 18 lat i akceptuję",
+    "age_confirmation_link": "Regulamin",
+    "marketing_consent_label": "Zgoda marketingowa – (opcjonalnie)",
+    "sms_note": "W kolejnym kroku otrzymasz SMS z kodem weryfikacyjnym.",
+    "create_account_button": "Utwórz konto",
+    "toast": {
+      "success_title": "Rejestracja pomyślna!",
+      "success_description": "Możesz się teraz zalogować."
+    },
+    "otp_code_label": "Kod z SMS",
+    "resend_code_link": "Wyślij kod ponownie",
+    "otp_sent_toast": "Wysłano kod SMS.",
+    "otp_invalid_toast": "Nieprawidłowy kod.",
+    "validation": {
+      "firstName_required": "Imię jest wymagane.",
+      "lastName_required": "Nazwisko jest wymagane.",
+      "email_required": "Email jest wymagany.",
+      "email_invalid": "Nieprawidłowy adres email.",
+      "phone_required": "Telefon jest wymagany.",
+      "phone_invalid": "Nieprawidłowy numer telefonu.",
+      "password_min_length": "Hasło musi mieć co najmniej 8 znaków.",
+      "passwords_do_not_match": "Hasła nie pasują do siebie.",
+      "age_confirmation_required": "Musisz potwierdzić, że masz ukończone 18 lat i akceptujesz regulamin."
+    }
+  },
+  "Footer": {
+    "copyright": "© 2024 QuizTime. Wszelkie prawa zastrzeżone.",
+    "terms": "Regulamin",
+    "privacy": "Polityka Prywatności"
+  }
+}

@@ -1,0 +1,96 @@
+{
+  "Hero": {
+    "title": "QuizTime: Testen Sie Ihr Wissen und sagen Sie die Zukunft voraus",
+    "description": "Nehmen Sie an einem Spiel teil, bei dem nicht nur historisches Wissen, sondern auch die Fähigkeit zur Vorhersage zählt. Beantworten Sie Fragen, sammeln Sie Punkte und steigen Sie in der Rangliste auf.",
+    "cta_start": "Jetzt spielen",
+    "cta_login": "Anmelden",
+    "card_text": "Testen Sie Ihr Wissen und Ihre Intuition"
+  },
+  "Header": {
+    "login": "Anmelden"
+  },
+  "Features": {
+    "subtitle": "Hauptmerkmale",
+    "title": "Alles, was Sie für eine gute Zeit brauchen",
+    "description": "Unsere Plattform bietet eine einzigartige Kombination aus historischen und vorhersagenden Quizfragen, Echtzeit-Ranglisten und vielem mehr.",
+    "historical_title": "Historische Fragen",
+    "historical_desc": "Testen Sie Ihr Wissen in verschiedenen Bereichen. Die Antworten sind bekannt, es zählen Geschwindigkeit und Präzision.",
+    "predictive_title": "Vorhersagefragen",
+    "predictive_desc": "Sagen Sie die Ergebnisse zukünftiger Ereignisse voraus. Ihre Antwort wird überprüft, sobald das Ereignis abgeschlossen ist.",
+    "leaderboards_title": "Abrechnung und Ranglisten",
+    "leaderboards_desc": "Verfolgen Sie Ihren Fortschritt, sammeln Sie Punkte für richtige Antworten und konkurrieren Sie mit anderen Spielern um den Titel des Besten."
+  },
+  "Login": {
+    "title": "Einloggen"
+  },
+  "LoginForm": {
+    "email_label": "E-Mail",
+    "password_label": "Passwort",
+    "phone_label": "Telefon",
+    "remember_me_label": "Angemeldet bleiben",
+    "forgot_password_link": "Passwort vergessen",
+    "age_confirmation_label_part1": "Ich bin über 18 Jahre alt und akzeptiere die",
+    "age_confirmation_link": "AGB",
+    "marketing_consent_label": "Marketing-Zustimmung – (optional)",
+    "login_button": "ANMELDEN",
+    "register_button": "REGISTRIEREN",
+    "or_separator": "ODER",
+    "phone_button": "Telefon",
+    "phone_login_title": "SMS-Anmeldung",
+    "back_to_email": "Zurück zu E-Mail",
+    "send_code_button": "Code senden",
+    "verify_code_button": "Code bestätigen",
+    "otp_code_label": "SMS-Code",
+    "toast_success": "Erfolgreich angemeldet!",
+    "otp_sent_toast": "SMS-Code gesendet.",
+    "otp_invalid_toast": "Ungültiger Code.",
+    "validation": {
+      "email_required": "E-Mail ist erforderlich.",
+      "email_invalid": "Ungültige E-Mail-Adresse.",
+      "password_required": "Passwort ist erforderlich.",
+      "age_confirmation_required": "Sie müssen bestätigen, dass Sie über 18 Jahre alt sind und die AGB akzeptieren."
+    }
+  },
+  "Register": {
+    "title": "QuizTime beitreten",
+    "description": "Erstellen Sie ein Konto, um mit dem Wettbewerb zu beginnen.",
+    "switch_to_login": "Haben Sie bereits ein Konto? Anmelden"
+  },
+  "RegisterForm": {
+    "firstName_label": "Vorname",
+    "lastName_label": "Nachname",
+    "email_label": "E-Mail",
+    "phone_label": "Telefon",
+    "password_label": "Passwort",
+    "confirm_password_label": "Passwort bestätigen",
+    "age_confirmation_label_part1": "Ich bin über 18 Jahre alt und akzeptiere die",
+    "age_confirmation_link": "AGB",
+    "marketing_consent_label": "Marketing-Zustimmung – (optional)",
+    "sms_note": "Im nächsten Schritt erhalten Sie einen SMS‑Code zur Verifizierung.",
+    "create_account_button": "Konto erstellen",
+    "toast": {
+      "success_title": "Registrierung erfolgreich!",
+      "success_description": "Sie können sich jetzt anmelden."
+    },
+    "otp_code_label": "SMS-Code",
+    "resend_code_link": "Code erneut senden",
+    "otp_sent_toast": "SMS-Code gesendet.",
+    "otp_invalid_toast": "Ungültiger Code.",
+    "validation": {
+      "firstName_required": "Vorname ist erforderlich.",
+      "lastName_required": "Nachname ist erforderlich.",
+      "email_required": "E-Mail ist erforderlich.",
+      "email_invalid": "Ungültige E-Mail-Adresse.",
+      "phone_required": "Telefonnummer ist erforderlich.",
+      "phone_invalid": "Ungültige Telefonnummer.",
+      "password_min_length": "Das Passwort muss mindestens 8 Zeichen lang sein.",
+      "passwords_do_not_match": "Die Passwörter stimmen nicht überein.",
+      "age_confirmation_required": "Sie müssen bestätigen, dass Sie über 18 Jahre alt sind und die AGB akzeptieren."
+    }
+  },
+  "Footer": {
+    "copyright": "© 2024 QuizTime. Alle Rechte vorbehalten.",
+    "terms": "Nutzungsbedingungen",
+    "privacy": "Datenschutzbestimmungen"
+  }
+}

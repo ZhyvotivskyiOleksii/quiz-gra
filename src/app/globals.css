@@ -1,0 +1,109 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%; /* #ffffff */
+    --foreground: 240 7% 10%; /* #1b1b1b */
+    --card: 0 0% 100%;
+    --card-foreground: 240 7% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 7% 10%;
+    --primary: 359 99% 46%; /* #E80104 */
+    --primary-foreground: 0 0% 98%; /* #fafafa */
+    --secondary: 0 0% 96.1%; /* #f5f5f5 */
+    --secondary-foreground: 240 7% 10%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 240 4% 46%; /* #757575 */
+    --accent: 0 0% 96.1%;
+    --accent-foreground: 240 7% 10%;
+    --destructive: 359 99% 46%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 89.8%; /* #e5e5e5 */
+    --input: 0 0% 89.8%;
+    --ring: 359 99% 46%;
+    --chart-1: 359 99% 46%;
+    --chart-2: 0 80% 65%;
+    --chart-3: 0 75% 70%;
+    --chart-4: 0 0% 80%;
+    --chart-5: 210 40% 96.1%;
+    --radius: 0.5rem;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 7% 10%;
+    --sidebar-primary: 359 99% 46%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 0 0% 93%;
+    --sidebar-accent-foreground: 240 7% 10%;
+    --sidebar-border: 0 0% 89.8%;
+    --sidebar-ring: 359 99% 46%;
+  }
+
+  .dark {
+    --background: 240 7% 10%; /* #1b1b1b */
+    --foreground: 0 0% 98%; /* hsl(0, 0%, 98%) */
+    --card: 240 5% 12%; /* #1e1e1e */
+    --card-foreground: 0 0% 98%;
+    --popover: 240 7% 10%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 359 99% 46%; /* #E80104 */
+    --primary-foreground: 0 0% 98%; /* #fafafa */
+    --secondary: 0 0% 23%; /* #3A3A3A */
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 21%; /* #353535 */
+    --muted-foreground: 0 0% 63%; /* #a1a1aa */
+    --accent: 0 0% 23%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 28%; /* #484848 */
+    --input: 0 0% 23%; /* #3A3A3A */
+    --ring: 359 99% 46%;
+    --chart-1: 359 99% 46%;
+    --chart-2: 0 80% 65%;
+    --chart-3: 0 75% 70%;
+    --chart-4: 0 0% 80%;
+    --chart-5: 210 40% 96.1%;
+    --radius: 0.5rem;
+    --sidebar-background: 240 5% 12%;
+    --sidebar-foreground: 0 0% 98%;
+    --sidebar-primary: 359 99% 46%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 0 0% 23%;
+    --sidebar-accent-foreground: 0 0% 98%;
+    --sidebar-border: 0 0% 28%;
+    --sidebar-ring: 359 99% 46%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  .react-tel-input .form-control {
+    @apply bg-transparent text-foreground border-input !w-full;
+  }
+  .react-tel-input .flag-dropdown {
+    @apply !bg-transparent !border-input;
+  }
+  .react-tel-input .flag-dropdown:hover,
+  .react-tel-input .flag-dropdown.open {
+    @apply !bg-transparent;
+  }
+  .react-tel-input .country-list {
+    @apply !bg-card !border-border;
+  }
+  .react-tel-input .country-list .country:hover {
+    @apply !bg-muted;
+  }
+  .react-tel-input .country-list .search {
+    @apply !bg-card;
+  }
+  .react-tel-input .country-list .search-box {
+    @apply !bg-input !text-foreground;
+  }
+}
