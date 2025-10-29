@@ -30,25 +30,8 @@ export default function Home() {
     })()
   }, [])
 
-  // После входа отправляем на /app, когда сервер уже видит сессию
-  React.useEffect(() => {
-    const supabase = getSupabase()
-    const { data: sub } = supabase.auth.onAuthStateChange(async (evt, sess) => {
-      if (evt === 'SIGNED_IN' && sess) {
-        // дождаться подтверждения на сервере
-        for (let i = 0; i < 20; i++) {
-          try {
-            const ping = await fetch('/api/auth/ping', { credentials: 'include', cache: 'no-store' })
-            const j = await ping.json().catch(() => ({}))
-            if (j?.ok) break
-          } catch {}
-          await new Promise(r => setTimeout(r, 100))
-        }
-        try { window.location.assign('/app') } catch { router.replace('/app') }
-      }
-    })
-    return () => { sub.subscription.unsubscribe() }
-  }, [router])
+  // Перенаправление на /app выполняют формы входа/регистрации и OAuth callback.
+  // На главной странице слушать onAuthStateChange и пинговать сервер не нужно — меньше лишних запросов.
 
   return (
     <>

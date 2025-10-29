@@ -3,9 +3,26 @@ import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowRight, BrainCircuit, CalendarDays, CheckCircle2, Clock } from "lucide-react";
 import Image from 'next/image'
-// Direct panel page (no auth gating)
+import { redirect } from 'next/navigation'
+import { cookies } from 'next/headers'
+import { createServerClient } from '@supabase/ssr'
+// Server-side auth gating: redirect guests to login modal on home
 
 export default async function AppDashboard() {
+  const cookieStore = await cookies()
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get: (name: string) => cookieStore.get(name)?.value,
+        set: (name: string, value: string, options: any) => { try { cookieStore.set({ name, value, ...options }) } catch {} },
+        remove: (name: string, options: any) => { try { cookieStore.set({ name, value: '', ...options, maxAge: 0 }) } catch {} },
+      },
+    }
+  )
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) redirect('/?auth=login')
   return (
     <div className="mx-auto w-full max-w-[1200px] space-y-6">
       {/* Nagłówek i szybkie akcje */}

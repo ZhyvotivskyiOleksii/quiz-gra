@@ -1,7 +1,10 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-// no auth redirect here
+// Server-side auth gating for localized admin
 import { Activity, HelpCircle, Book, Users } from "lucide-react";
 import { UsersActivityChart } from '@/components/admin/users-activity-chart'
+import { redirect } from 'next/navigation'
+import { cookies } from 'next/headers'
+import { createServerClient } from '@supabase/ssr'
 
 
 const chartData = [
@@ -17,7 +20,21 @@ const chartData = [
 
 
 export default async function AdminDashboard({ params }: { params: Promise<{ locale: string }> }) {
-  await params
+  const { locale } = await params
+  const cookieStore = await cookies()
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get: (name: string) => cookieStore.get(name)?.value,
+        set: (name: string, value: string, options: any) => { try { cookieStore.set({ name, value, ...options }) } catch {} },
+        remove: (name: string, options: any) => { try { cookieStore.set({ name, value: '', ...options, maxAge: 0 }) } catch {} },
+      },
+    }
+  )
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) redirect(`/${locale}?auth=login`)
   const stats = [
     { title: "Aktywne pytania", value: "1,250", icon: HelpCircle, description: "+50 w tym tygodniu" },
     { title: "Do rozliczenia", value: "78", icon: Book, description: "12 pilnych" },

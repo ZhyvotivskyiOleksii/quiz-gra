@@ -1,64 +1,53 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
 
 export async function GET(req: NextRequest) {
-  // Prepare redirect response first so Supabase can attach cookies onto it
-  const redirectResponse = NextResponse.redirect(new URL('/app', req.url))
+  const url = new URL(req.url)
+  const res = NextResponse.redirect(new URL('/app', url.origin))
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
-      cookieOptions: { secure: false },
       cookies: {
-        getAll: () => req.cookies.getAll().map(c => ({ name: c.name, value: c.value })),
-        setAll: async (cookieList) => {
-          cookieList.forEach(({ name, value, options }) => {
-            try { redirectResponse.cookies.set({ name, value, ...options }) } catch {}
-          })
-        }
-      } as any,
+        get: (name: string) => req.cookies.get(name)?.value,
+        set: (name: string, value: string, options: any) => { try { res.cookies.set({ name, value, ...options }) } catch {} },
+        remove: (name: string, options: any) => { try { res.cookies.set({ name, value: '', ...options, maxAge: 0 }) } catch {} },
+      },
     }
   )
 
   try {
-    await supabase.auth.exchangeCodeForSession(req.url)
-  } catch {
-    // ignore; if no code present, fall through to redirect
-  }
+    await supabase.auth.exchangeCodeForSession(url.searchParams)
+  } catch {}
 
-  // After OAuth callback, ensure default marketing consent is set (best-effort)
+  // Optional: set default marketing consent
   try {
     const { data: userRes } = await supabase.auth.getUser()
-    const user = userRes?.user as any
-    const hasConsent = !!user?.user_metadata?.marketing_consent
-    if (user && !hasConsent) {
-      await supabase.auth.updateUser({ data: { marketing_consent: true } })
+    const user = (userRes as any)?.user
+    if (user && !user?.user_metadata?.marketing_consent) {
+      try { await supabase.auth.updateUser({ data: { marketing_consent: true } }) } catch {}
     }
   } catch {}
 
-  return redirectResponse
+  const from = url.searchParams.get('from')
+  if (from) return NextResponse.redirect(new URL(from, url.origin))
+  return res
 }
 
 // Sync auth cookies for email/password or SMS flows
 export async function POST(req: NextRequest) {
-  // Prepare JSON response first so Supabase can attach cookies onto it
-  let res = NextResponse.json({ ok: true })
+  const res = NextResponse.json({ ok: true })
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
-      cookieOptions: { secure: false },
       cookies: {
-        getAll: () => req.cookies.getAll().map(c => ({ name: c.name, value: c.value })),
-        setAll: async (cookieList) => {
-          cookieList.forEach(({ name, value, options }) => {
-            try { res.cookies.set({ name, value, ...options }) } catch {}
-          })
-        }
-      } as any,
+        get: (name: string) => req.cookies.get(name)?.value,
+        set: (name: string, value: string, options: any) => { try { res.cookies.set({ name, value, ...options }) } catch {} },
+        remove: (name: string, options: any) => { try { res.cookies.set({ name, value: '', ...options, maxAge: 0 }) } catch {} },
+      },
     }
   )
 
@@ -72,7 +61,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true })
     }
 
-    // Persist session cookies on the server for RSC routes
     await supabase.auth.setSession({
       access_token: session.access_token!,
       refresh_token: session.refresh_token!,

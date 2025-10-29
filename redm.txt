@@ -1,5 +1,10 @@
 B97GVjzl9PTPw4U2 пароль 
 
 
+git fetch origin && git reset --hard @{u} && git clean -fd
 
 E2bt1ltdqZMQiyLuU0nHwwgkGJ8wrxnK9kgb5N3V
+
+
+
+Storage → Cookies → http://localhost:9002
