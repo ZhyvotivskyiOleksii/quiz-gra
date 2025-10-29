@@ -13,7 +13,7 @@ import {
   SidebarTrigger,
   SidebarInset,
 } from '@/components/ui/sidebar';
-import { Play, History, LogOut, Bell, Settings as SettingsIcon, LayoutDashboard } from 'lucide-react';
+import { Play, History, LogOut, Bell, Settings as SettingsIcon, LayoutDashboard, Shield } from 'lucide-react';
 import { Logo } from '@/components/shared/logo';
 import { usePathname, useRouter } from 'next/navigation';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -108,7 +108,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   ];
   
   const handleNavigate = (href: string) => router.push(href);
-  const handleLogout = async () => { const s = getSupabase(); await s.auth.signOut(); router.push('/'); }
+  const handleLogout = async () => {
+    const s = getSupabase();
+    try { await s.auth.signOut() } catch {}
+    try {
+      await fetch('/auth/callback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ event: 'SIGNED_OUT' }),
+      })
+    } catch {}
+    router.push('/');
+  }
 
   const getActiveState = (itemHref: string) => {
     if (!pathname) return false
@@ -142,6 +154,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </SidebarContent>
         <SidebarFooter className="mt-auto px-2 pb-4">
           <SidebarMenu>
+            {isAdmin && (
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  onClick={() => handleNavigate('/admin')}
+                  variant="bubble"
+                  size="lg"
+                  isActive={pathname?.startsWith('/admin')}
+                  tooltip={{ children: 'Admin panel', side: 'right', align: 'center' }}
+                >
+                  <Shield />
+                  <span>Admin</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
             <SidebarMenuItem>
               <SidebarMenuButton
                 onClick={() => handleNavigate('/app/settings?tab=phone')}

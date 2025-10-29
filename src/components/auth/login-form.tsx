@@ -86,6 +86,7 @@ export function LoginForm({ onSuccess, onSwitchToRegister, initialEmail, initial
         })
         if (error || !data.session) throw error ?? new Error('Invalid credentials')
         // Sync server cookies so RSC (/app) sees the session immediately
+        let ok = false
         try {
           await fetch('/auth/callback', {
             method: 'POST',
@@ -93,18 +94,29 @@ export function LoginForm({ onSuccess, onSwitchToRegister, initialEmail, initial
             credentials: 'include',
             body: JSON.stringify({ event: 'SIGNED_IN', session: data.session }),
           })
-          await new Promise((r) => setTimeout(r, 30))
+          // Подождать, пока сервер увидит сессию
+          for (let i = 0; i < 20; i++) {
+            try {
+              const ping = await fetch('/api/auth/ping', { credentials: 'include', cache: 'no-store' })
+              const j = await ping.json().catch(() => ({}))
+              if (j?.ok) { ok = true; break }
+            } catch {}
+            await new Promise((r) => setTimeout(r, 100))
+          }
         } catch {}
         toast({ title: 'Zalogowano pomyślnie!' })
         // Use hard redirect to ensure server sees fresh auth cookies
-        try {
-          if (typeof window !== 'undefined') {
-            window.location.assign('/app')
-          } else {
-            router.replace('/app')
-          }
-        } catch {
-          router.replace('/app')
+        if (ok) {
+          try {
+            if (typeof window !== 'undefined') {
+              window.location.assign('/app')
+            } else {
+              router.replace('/app')
+            }
+          } catch { router.replace('/app') }
+        } else {
+          toast({ title: 'Проблема сессии', description: 'Сервер не видит вход. Попробуйте ещё раз.', variant: 'destructive' as any })
+          return
         }
         onSuccess?.()
       } catch (err: any) {
@@ -159,6 +171,7 @@ export function LoginForm({ onSuccess, onSwitchToRegister, initialEmail, initial
       // Set default marketing consent for phone login if not set
       try { await supabase.auth.updateUser({ data: { marketing_consent: true } }) } catch {}
       // Sync server cookies
+      let ok = false
       try {
         await fetch('/auth/callback', {
           method: 'POST',
@@ -166,17 +179,27 @@ export function LoginForm({ onSuccess, onSwitchToRegister, initialEmail, initial
           credentials: 'include',
           body: JSON.stringify({ event: 'SIGNED_IN', session: (data as any)?.session }),
         })
-        await new Promise((r) => setTimeout(r, 30))
+        for (let i = 0; i < 20; i++) {
+          try {
+            const ping = await fetch('/api/auth/ping', { credentials: 'include', cache: 'no-store' })
+            const j = await ping.json().catch(() => ({}))
+            if (j?.ok) { ok = true; break }
+          } catch {}
+          await new Promise((r) => setTimeout(r, 100))
+        }
       } catch {}
       toast({ title: 'Zalogowano pomyślnie!' })
-      try {
-        if (typeof window !== 'undefined') {
-          window.location.assign('/app')
-        } else {
-          router.replace('/app')
-        }
-      } catch {
-        router.replace('/app')
+      if (ok) {
+        try {
+          if (typeof window !== 'undefined') {
+            window.location.assign('/app')
+          } else {
+            router.replace('/app')
+          }
+        } catch { router.replace('/app') }
+      } else {
+        toast({ title: 'Проблема сессии', description: 'Сервер не видит вход. Попробуйте ещё раз.', variant: 'destructive' as any })
+        return
       }
       onSuccess?.()
     } catch (err: any) {

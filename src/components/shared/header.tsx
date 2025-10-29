@@ -73,7 +73,7 @@ export function Header() {
             await fetch('/auth/callback', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              credentials: 'same-origin',
+              credentials: 'include',
               body: JSON.stringify({ event: evt, session: sess }),
             })
           } catch {}
@@ -108,10 +108,13 @@ export function Header() {
     })()
   }, [])
 
-  // Open modal from URL: /?auth=login or /?auth=register
+  // Автооткрывать модалку только если пользователь НЕ авторизован
+  // и явно передан параметр ?auth=login|register на публичных страницах
   const searchParams = useSearchParams();
   React.useEffect(() => {
     const auth = searchParams?.get('auth');
+    if (userEmail) return; // не открываем, если уже залогинен
+    if (pathname?.startsWith('/app') || pathname?.startsWith('/admin')) return; // в приложении/админке модалка не нужна
     if (auth === 'login' || auth === 'register') {
       setAuthView(auth);
       setOpen(true);
@@ -122,7 +125,7 @@ export function Header() {
         router.replace(url.pathname + url.search + url.hash);
       } catch {}
     }
-  }, [searchParams]);
+  }, [searchParams, userEmail, pathname, router]);
 
   const initials = React.useMemo(() => {
     const e = userEmail || ''
@@ -137,6 +140,11 @@ export function Header() {
     setOpen(false);
     setTimeout(() => setAuthView('login'), 300);
   }
+
+  // Если авторизовался — гарантированно закрыть модалку
+  React.useEffect(() => {
+    if (userEmail && open) setOpen(false)
+  }, [userEmail, open])
 
   const handleRegisterSuccess = (prefill?: { email?: string; password?: string; notice?: string }) => {
     // Switch to login and prefill credentials, keep dialog open
@@ -165,7 +173,9 @@ export function Header() {
                   size="icon"
                   className="overflow-hidden rounded-full"
                   title="Przejdź do panelu"
-                  onClick={() => router.push('/app' as any)}
+                  onClick={() => {
+                    try { window.location.assign('/app') } catch { router.push('/app' as any) }
+                  }}
                 >
                   <Avatar>
                     <AvatarImage data-ai-hint="person face" src={avatarUrl} alt="User" />
@@ -258,4 +268,16 @@ export function Header() {
     </header>
   );
 }
-  const handleLogout = async () => { const s = getSupabase(); try { await s.auth.signOut() } catch {}; try { router.push('/') } catch {} }
+  const handleLogout = async () => {
+    const s = getSupabase();
+    try { await s.auth.signOut() } catch {}
+    try {
+      await fetch('/auth/callback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ event: 'SIGNED_OUT' }),
+      })
+    } catch {}
+    try { router.push('/') } catch {}
+  }

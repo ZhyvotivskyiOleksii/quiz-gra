@@ -1,9 +1,6 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Activity, HelpCircle, Book, Users } from "lucide-react";
 import { UsersActivityChart } from '@/components/admin/users-activity-chart'
-import { redirect } from 'next/navigation'
-import { cookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
 
 const chartData = [
   { month: "January", desktop: 186 },
@@ -17,26 +14,6 @@ const chartData = [
 // Chart config is handled inside client chart component
 
 export default async function AdminDashboard() {
-  const cookieStore = await cookies()
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll: () => cookieStore.getAll().map(c => ({ name: c.name, value: c.value })),
-      } as any,
-    }
-  )
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) redirect(`/`)
-  // Server-side admin guard
-  const { data: prof } = await supabase
-    .from('profiles')
-    .select('is_admin')
-    .eq('id', session.user.id)
-    .maybeSingle()
-  if (!prof?.is_admin) redirect(`/`)
-
   const stats = [
     { title: "Aktywne pytania", value: "1,250", icon: HelpCircle, description: "+50 w tym tygodniu" },
     { title: "Do rozliczenia", value: "78", icon: Book, description: "12 pilnych" },

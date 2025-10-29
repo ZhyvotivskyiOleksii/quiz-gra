@@ -30,24 +30,21 @@ export default function Home() {
     })()
   }, [])
 
-  // Only redirect to /app after SIGNED_IN event if URL has ?auth=login|register
+  // После входа отправляем на /app, когда сервер уже видит сессию
   React.useEffect(() => {
-    const search = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null
-    const authParam = search?.get('auth')
-    const shouldAuto = authParam === 'login' || authParam === 'register'
-    if (!shouldAuto) return
     const supabase = getSupabase()
-    const { data: sub } = supabase.auth.onAuthStateChange((evt) => {
-      if (evt === 'SIGNED_IN') {
-        try {
-          if (typeof window !== 'undefined') {
-            window.location.assign('/app')
-          } else {
-            router.replace('/app')
-          }
-        } catch {
-          router.replace('/app')
+    const { data: sub } = supabase.auth.onAuthStateChange(async (evt, sess) => {
+      if (evt === 'SIGNED_IN' && sess) {
+        // дождаться подтверждения на сервере
+        for (let i = 0; i < 20; i++) {
+          try {
+            const ping = await fetch('/api/auth/ping', { credentials: 'include', cache: 'no-store' })
+            const j = await ping.json().catch(() => ({}))
+            if (j?.ok) break
+          } catch {}
+          await new Promise(r => setTimeout(r, 100))
         }
+        try { window.location.assign('/app') } catch { router.replace('/app') }
       }
     })
     return () => { sub.subscription.unsubscribe() }

@@ -3,28 +3,9 @@ import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowRight, BrainCircuit, CalendarDays, CheckCircle2, Clock } from "lucide-react";
 import Image from 'next/image'
-import { redirect } from 'next/navigation'
-import { cookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
-import { ClientGate } from '@/components/auth/client-gate'
+// Direct panel page (no auth gating)
 
 export default async function AppDashboard() {
-  const cookieStore = await cookies()
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll: () => cookieStore.getAll().map(c => ({ name: c.name, value: c.value })),
-      } as any,
-    }
-  )
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) {
-    // No server-side session visible. Try client-side sync without redirect loop.
-    return <ClientGate /> as any
-  }
-
   return (
     <div className="mx-auto w-full max-w-[1200px] space-y-6">
       {/* Nagłówek i szybkie akcje */}
