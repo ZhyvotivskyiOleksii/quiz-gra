@@ -28,3 +28,4 @@ npm i @supabase/supabase-js
 ## Usage
 - Registration stores the phone in user metadata.
 - Login → choose “Telefon” to use SMS OTP (Supabase + Twilio).
+  Email is stored in user metadata `contact_email` and mirrored into `public.profiles` via trigger, so no email verification is required.

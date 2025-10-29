@@ -1,8 +1,24 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { redirect } from 'next/navigation'
+import { cookies } from 'next/headers'
+import { createServerClient } from '@supabase/ssr'
 
-export default function HistoryPage() {
+export default async function HistoryPage({ params }: { params: Promise<{ locale: string }> }) {
+  const cookieStore = await cookies()
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll: () => cookieStore.getAll().map(c => ({ name: c.name, value: c.value })),
+      } as any,
+    }
+  )
+  const { locale } = await params
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) redirect(`/${locale}`)
   const gameHistory = [
     { id: 'g_1', date: '2024-08-01', score: 4, settled: true },
     { id: 'g_2', date: '2024-07-30', score: 5, settled: true },
@@ -49,3 +65,5 @@ export default function HistoryPage() {
     </div>
   );
 }
+export const dynamic = 'force-dynamic'
+export const revalidate = 0

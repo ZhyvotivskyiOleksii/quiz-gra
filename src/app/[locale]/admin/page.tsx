@@ -1,11 +1,9 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { redirect } from 'next/navigation'
+import { cookies } from 'next/headers'
+import { createServerClient } from '@supabase/ssr'
 import { Activity, HelpCircle, Book, Users } from "lucide-react";
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-} from "@/components/ui/chart"
-import { Bar, BarChart, CartesianGrid, XAxis } from "recharts"
+import { UsersActivityChart } from '@/components/admin/users-activity-chart'
 
 
 const chartData = [
@@ -17,15 +15,24 @@ const chartData = [
   { month: "June", desktop: 214 },
 ]
 
-const chartConfig = {
-  desktop: {
-    label: "Desktop",
-    color: "hsl(var(--primary))",
-  },
-}
+// Chart config is handled inside client chart component
 
 
-export default function AdminDashboard() {
+export default async function AdminDashboard({ params }: { params: Promise<{ locale: string }> }) {
+  // Server-side guard
+  const cookieStore = await cookies()
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll: () => cookieStore.getAll().map(c => ({ name: c.name, value: c.value })),
+      } as any,
+    }
+  )
+  const { locale } = await params
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) redirect(`/${locale}`)
   const stats = [
     { title: "Aktywne pytania", value: "1,250", icon: HelpCircle, description: "+50 w tym tygodniu" },
     { title: "Do rozliczenia", value: "78", icon: Book, description: "12 pilnych" },
@@ -57,23 +64,7 @@ export default function AdminDashboard() {
             <CardDescription>Liczba sesji w ostatnich 6 miesiącach.</CardDescription>
           </CardHeader>
           <CardContent>
-            <ChartContainer config={chartConfig}>
-              <BarChart accessibilityLayer data={chartData}>
-                <CartesianGrid vertical={false} />
-                <XAxis
-                  dataKey="month"
-                  tickLine={false}
-                  tickMargin={10}
-                  axisLine={false}
-                  tickFormatter={(value) => value.slice(0, 3)}
-                />
-                <ChartTooltip
-                  cursor={false}
-                  content={<ChartTooltipContent hideLabel />}
-                />
-                <Bar dataKey="desktop" fill="var(--color-desktop)" radius={8} />
-              </BarChart>
-            </ChartContainer>
+            <UsersActivityChart data={chartData} />
           </CardContent>
         </Card>
         <Card className="col-span-3">
@@ -111,3 +102,5 @@ export default function AdminDashboard() {
     </div>
   );
 }
+export const dynamic = 'force-dynamic'
+export const revalidate = 0

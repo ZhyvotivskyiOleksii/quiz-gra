@@ -29,7 +29,9 @@
     --chart-4: 0 0% 80%;
     --chart-5: 210 40% 96.1%;
     --radius: 0.5rem;
-    --sidebar-background: 0 0% 98%;
+    /* Light theme: slightly tinted surface for app content (right of sidebar) */
+    --app-surface: 0 0% 97.5%;
+    --sidebar-background: 0 0% 100%;
     --sidebar-foreground: 240 7% 10%;
     --sidebar-primary: 359 99% 46%;
     --sidebar-primary-foreground: 0 0% 98%;
@@ -42,7 +44,8 @@
   .dark {
     --background: 240 7% 10%; /* #1b1b1b */
     --foreground: 0 0% 98%; /* hsl(0, 0%, 98%) */
-    --card: 240 5% 12%; /* #1e1e1e */
+    /* Slightly lighter to make cards pop over dark bg */
+    --card: 240 5% 16%;
     --card-foreground: 0 0% 98%;
     --popover: 240 7% 10%;
     --popover-foreground: 0 0% 98%;
@@ -65,6 +68,8 @@
     --chart-4: 0 0% 80%;
     --chart-5: 210 40% 96.1%;
     --radius: 0.5rem;
+    /* Dark theme keeps same background for content */
+    --app-surface: var(--background);
     --sidebar-background: 240 5% 12%;
     --sidebar-foreground: 0 0% 98%;
     --sidebar-primary: 359 99% 46%;
@@ -73,6 +78,27 @@
     --sidebar-accent-foreground: 0 0% 98%;
     --sidebar-border: 0 0% 28%;
     --sidebar-ring: 359 99% 46%;
+  }
+}
+
+/* Custom sidebar bubble notches that "cut" into the sidebar while using the
+   right content background. Works in light and dark themes. */
+@layer components {
+  /* Clean, simple active style for sidebar pill */
+  .sb-bubble[data-active="true"] { position: relative; }
+  .sb-bubble[data-active="true"]::after {
+    content: "";
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    width: 6px;
+    height: 6px;
+    transform: translateY(-50%);
+    border-radius: 9999px;
+    background: hsl(var(--primary));
+    /* subtle cut-out ring to blend with pill */
+    box-shadow: 0 0 0 3px hsl(var(--background));
+    pointer-events: none;
   }
 }
 
@@ -90,6 +116,10 @@
   .react-tel-input .flag-dropdown {
     @apply !bg-transparent !border-input;
   }
+  .react-tel-input .selected-flag .arrow,
+  .react-tel-input .selected-flag .arrow.up {
+    display: none !important;
+  }
   .react-tel-input .flag-dropdown:hover,
   .react-tel-input .flag-dropdown.open {
     @apply !bg-transparent;
@@ -106,4 +136,21 @@
   .react-tel-input .country-list .search-box {
     @apply !bg-input !text-foreground;
   }
+  /* react-day-picker accessibility helpers (we don't import its CSS) */
+  .rdp-vhidden {
+    border: 0 !important;
+    clip: rect(0 0 0 0) !important;
+    height: 1px !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    padding: 0 !important;
+    position: absolute !important;
+    width: 1px !important;
+    white-space: nowrap !important;
+  }
+  /* Optional nicer dropdown styling for month/year */
+  .rdp-caption { @apply flex items-center justify-center gap-2; }
+  .rdp-caption_dropdowns { @apply flex items-center gap-2; }
+  .rdp-dropdown_month,
+  .rdp-dropdown_year { @apply bg-card text-foreground border border-border rounded-md px-2 py-1 text-sm; }
 }

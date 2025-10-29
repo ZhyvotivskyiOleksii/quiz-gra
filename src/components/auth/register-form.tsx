@@ -3,8 +3,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
 import React from 'react';
+import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -17,45 +17,41 @@ import {
 } from '@/components/ui/form';
 // Input not directly used after NotchedInput migration
 import NotchedInput from '@/components/ui/notched-input';
+import PhoneInputField from '@/components/ui/phone-input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
-import { Link } from '@/navigation';
 import { getSupabase } from '@/lib/supabaseClient';
 
 type RegisterFormProps = {
-  onSuccess?: () => void;
+  onSuccess?: (prefill?: { email?: string; password?: string; notice?: string }) => void;
 };
 
 export function RegisterForm({ onSuccess }: RegisterFormProps) {
+  const router = useRouter();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = React.useState(false);
-  const [showPassword, setShowPassword] = React.useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = React.useState(false);
   const [isOtpStep, setIsOtpStep] = React.useState(false);
   const [otpCode, setOtpCode] = React.useState('');
   const [pendingPhone, setPendingPhone] = React.useState('');
-  const [pendingPassword, setPendingPassword] = React.useState('');
-  const t = useTranslations('RegisterForm');
+  const [pendingProfile, setPendingProfile] = React.useState<{firstName: string; lastName: string; email: string; password: string} | null>(null);
+  const [showPassword, setShowPassword] = React.useState(false);
+  // Polish-only labels
 
   const formSchema = z.object({
-    firstName: z.string().min(1, { message: t('validation.firstName_required') }),
-    lastName: z.string().min(1, { message: t('validation.lastName_required') }),
-    email: z.string().min(1, t('validation.email_required')).email({ message: t('validation.email_invalid') }),
+    firstName: z.string().min(1, { message: 'Imię jest wymagane.' }),
+    lastName: z.string().min(1, { message: 'Nazwisko jest wymagane.' }),
+    email: z.string().min(1, 'Email jest wymagany.').email({ message: 'Nieprawidłowy adres email.' }),
     phone: z
       .string()
-      .min(6, { message: t('validation.phone_required') })
+      .min(6, { message: 'Telefon jest wymagany.' })
       .regex(/^\+?\d{6,15}$/,
-        { message: t('validation.phone_invalid') }),
-    password: z.string().min(8, { message: t('validation.password_min_length') }),
-    confirmPassword: z.string().min(8, { message: t('validation.password_min_length') }),
+        { message: 'Nieprawidłowy numer telefonu.' }),
+    password: z.string().min(8, { message: 'Hasło musi mieć co najmniej 8 znaków.' }),
     isOfAge: z.boolean().refine(val => val === true, {
-      message: t('validation.age_confirmation_required'),
+      message: 'Musisz potwierdzić, że masz ukończone 18 lat i akceptujesz regulamin.',
     }),
-    marketingConsent: z.boolean().default(false),
-  }).refine(data => data.password === data.confirmPassword, {
-    message: t('validation.passwords_do_not_match'),
-    path: ['confirmPassword'],
+    marketingConsent: z.boolean().default(true),
   });
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -66,9 +62,8 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       email: '',
       phone: '',
       password: '',
-      confirmPassword: '',
-      isOfAge: false,
-      marketingConsent: false,
+      isOfAge: true,
+      marketingConsent: true,
     },
     mode: 'onBlur',
   });
@@ -79,18 +74,22 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       const phone = values.phone.startsWith('+') ? values.phone : `+${values.phone}`
 
       const supabase = getSupabase();
-      // Sign up using phone only to avoid email confirmation.
-      const { error } = await supabase.auth.signUp({
+
+      // Optional pre-check: email already used by any user (auth.users.email or metadata.contact_email)
+      try {
+        const { data: exists, error: existsErr } = await supabase.rpc('email_exists', { p_email: values.email.toLowerCase() })
+        if (!existsErr && exists === true) {
+          const msg = 'Ten email jest połączony z Google — Zaloguj się przez Google'
+          toast({ title: msg })
+          onSuccess?.({ email: values.email, notice: msg })
+          setIsLoading(false)
+          return
+        }
+      } catch {}
+      // Start OTP sign-in (will create user if not exists)
+      const { error } = await supabase.auth.signInWithOtp({
         phone,
-        password: values.password,
-        options: {
-          data: {
-            first_name: values.firstName,
-            last_name: values.lastName,
-            marketing_consent: values.marketingConsent,
-            contact_email: values.email, // store email only as metadata
-          },
-        },
+        options: { shouldCreateUser: true },
       })
 
       if (error) {
@@ -98,9 +97,9 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       }
 
       setPendingPhone(phone)
-      setPendingPassword(values.password)
+      setPendingProfile({ firstName: values.firstName, lastName: values.lastName, email: values.email, password: values.password })
       setIsOtpStep(true)
-      toast({ title: t('otp_sent_toast') })
+      toast({ title: 'Wysłano kod SMS.' })
     } catch (err: any) {
       toast({ title: 'Registration failed', description: err?.message ?? 'Unknown error', variant: 'destructive' as any })
     } finally {
@@ -115,14 +114,58 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       const supabase = getSupabase();
       const { data, error } = await supabase.auth.verifyOtp({ phone: pendingPhone, token: otpCode, type: 'sms' })
       if (error) throw error
-      // If session wasn't created, sign in with password
-      if (!data.session) {
-        await supabase.auth.signInWithPassword({ phone: pendingPhone, password: pendingPassword })
+      // We have a session now; update profile fields
+      if (pendingProfile) {
+        const { error: updErr } = await supabase.auth.updateUser({
+          // Nie zmieniamy głównego pola email, aby nie uruchamiać weryfikacji mailowej
+          data: {
+            first_name: pendingProfile.firstName,
+            last_name: pendingProfile.lastName,
+            marketing_consent: form.getValues('marketingConsent') ?? false,
+            contact_email: pendingProfile.email,
+          },
+        })
+        if (updErr) throw updErr
+
+        if (pendingProfile.password) {
+          const { error: passErr } = await supabase.auth.updateUser({ password: pendingProfile.password })
+          if (passErr) throw passErr
+        }
+        // Ensure profile row exists and set display name. Short ID is generated on DB side.
+        try {
+          const { data: user } = await supabase.auth.getUser()
+          if (user.user) {
+            await supabase.from('profiles').upsert({
+              id: user.user.id,
+              display_name: `${pendingProfile.firstName} ${pendingProfile.lastName}`.trim() || null,
+            }, { onConflict: 'id' } as any)
+          }
+        } catch {}
       }
-      toast({ title: t('toast.success_title'), description: t('toast.success_description') })
-      onSuccess?.()
+      toast({ title: 'Rejestracja pomyślna!', description: 'Przekierowujemy do panelu…' })
+      // Sync server cookies so /app server components see the session immediately
+      try {
+        await fetch('/auth/callback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ event: 'SIGNED_IN', session: data?.session }),
+        })
+      } catch {}
+      // User already has a session after verifyOtp — go straight to app.
+      // Use hard redirect to guarantee cookies are applied before SSR guard runs.
+      try {
+        if (typeof window !== 'undefined') {
+          window.location.assign('/app')
+        } else {
+          router.replace('/app')
+        }
+      } catch {
+        router.replace('/app')
+      }
+      onSuccess?.({ email: pendingProfile?.email, password: pendingProfile?.password })
     } catch (err: any) {
-      toast({ title: t('otp_invalid_toast'), description: err?.message ?? 'Invalid code', variant: 'destructive' as any })
+      toast({ title: 'Nieprawidłowy kod.', description: err?.message ?? 'Invalid code', variant: 'destructive' as any })
     } finally {
       setIsLoading(false)
     }
@@ -135,7 +178,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       const supabase = getSupabase();
       const { error } = await supabase.auth.signInWithOtp({ phone: pendingPhone })
       if (error) throw error
-      toast({ title: t('otp_sent_toast') })
+      toast({ title: 'Wysłano kod SMS.' })
     } catch (err: any) {
       toast({ title: 'SMS error', description: err?.message ?? 'Unknown error', variant: 'destructive' as any })
     } finally {
@@ -146,8 +189,8 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
   return (
     <Form {...form}>
       {!isOtpStep ? (
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-2.5 sm:space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
           <FormField
             control={form.control}
             name="firstName"
@@ -158,7 +201,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
                       autoComplete="given-name"
                       {...field}
                       error={!!fieldState.error}
-                      label={t('firstName_label')}
+                      label={'Imię'}
                     />
                   </FormControl>
                   <FormMessage />
@@ -175,7 +218,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
                       autoComplete="family-name"
                       {...field}
                       error={!!fieldState.error}
-                      label={t('lastName_label')}
+                      label={'Nazwisko'}
                     />
                   </FormControl>
                   <FormMessage />
@@ -194,25 +237,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
                   autoComplete="email"
                   {...field}
                   error={!!fieldState.error}
-                  label={t('email_label')}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="phone"
-          render={({ field, fieldState }) => (
-            <FormItem>
-              <FormControl>
-                <NotchedInput
-                  type="tel"
-                  autoComplete="tel"
-                  {...field}
-                  error={!!fieldState.error}
-                  label={t('phone_label')}
+                  label={'Email'}
                 />
               </FormControl>
               <FormMessage />
@@ -230,11 +255,11 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
                   autoComplete="new-password"
                   {...field}
                   error={!!fieldState.error}
-                  label={t('password_label')}
+                  label={'Hasło'}
                   rightAdornment={
                     <Button
                       type="button"
-                      aria-label={showPassword ? t('password_label') + ' hide' : t('password_label') + ' show'}
+                      aria-label={showPassword ? 'Ukryj hasło' : 'Pokaż hasło'}
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7 text-muted-foreground"
@@ -251,34 +276,23 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
         />
         <FormField
           control={form.control}
-          name="confirmPassword"
+          name="phone"
           render={({ field, fieldState }) => (
             <FormItem>
               <FormControl>
-                <NotchedInput
-                  type={showConfirmPassword ? 'text' : 'password'}
-                  autoComplete="new-password"
-                  {...field}
+                <PhoneInputField
+                  id="register-phone"
+                  label={'Telefon'}
+                  value={field.value}
+                  onChange={field.onChange}
                   error={!!fieldState.error}
-                  label={t('confirm_password_label')}
-                  rightAdornment={
-                    <Button
-                      type="button"
-                      aria-label={showConfirmPassword ? t('confirm_password_label') + ' hide' : t('confirm_password_label') + ' show'}
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-muted-foreground"
-                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    >
-                      {showConfirmPassword ? <EyeOff /> : <Eye />}
-                    </Button>
-                  }
                 />
               </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
+        
         <div className="space-y-4 pt-2">
           <FormField
             control={form.control}
@@ -293,9 +307,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
                   />
                 </FormControl>
                 <div className="space-y-1 leading-none">
-                  <FormLabel className="text-sm font-normal leading-none pointer-events-auto">
-                    {t('age_confirmation_label_part1')} <a href="#" className="underline">{t('age_confirmation_link')}</a>.
-                  </FormLabel>
+                  <FormLabel className="text-sm font-normal leading-none pointer-events-auto">Mam ukończone 18 lat i akceptuję <a href="#" className="underline">Regulamin</a>.</FormLabel>
                   <FormMessage />
                 </div>
               </FormItem>
@@ -313,38 +325,36 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
                   />
                 </FormControl>
                 <div className="space-y-1 leading-none">
-                  <FormLabel className="text-sm font-normal leading-none pointer-events-auto">
-                    {t('marketing_consent_label')}
-                  </FormLabel>
+                  <FormLabel className="text-sm font-normal leading-none pointer-events-auto">Zgoda marketingowa – (opcjonalnie)</FormLabel>
                 </div>
               </FormItem>
             )}
           />
         </div>
-        <p className="text-xs text-muted-foreground pt-2">{t('sms_note')}</p>
-        <Button type="submit" className="w-full" disabled={isLoading}>
+        <p className="text-xs text-muted-foreground pt-2">W kolejnym kroku otrzymasz SMS z kodem weryfikacyjnym.</p>
+        <Button type="submit" className="w-full h-10 sm:h-11" disabled={isLoading}>
           {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {t('create_account_button')}
+          Wyślij kod
         </Button>
       </form>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-3 sm:space-y-4">
           <NotchedInput
             type="text"
             inputMode="numeric"
             pattern="[0-9]*"
             value={otpCode}
             onChange={(e) => setOtpCode(e.target.value)}
-            label={t('otp_code_label')}
+            label={'Kod z SMS'}
           />
           <div className="flex items-center justify-between">
-            <Button className="w-full" onClick={onVerifyOtp} disabled={isLoading || otpCode.length === 0}>
+            <Button className="w-full h-10 sm:h-11" onClick={onVerifyOtp} disabled={isLoading || otpCode.length === 0}>
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {t('verify_code_button')}
+              Utwórz konto
             </Button>
           </div>
           <button type="button" onClick={resendCode} className="text-sm text-primary hover:underline">
-            {t('resend_code_link')}
+            Wyślij kod ponownie
           </button>
         </div>
       )}

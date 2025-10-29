@@ -5,8 +5,24 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { redirect } from 'next/navigation'
+import { cookies } from 'next/headers'
+import { createServerClient } from '@supabase/ssr'
 
-export default function ProfilePage() {
+export default async function ProfilePage({ params }: { params: Promise<{ locale: string }> }) {
+  const cookieStore = await cookies()
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll: () => cookieStore.getAll().map(c => ({ name: c.name, value: c.value })),
+      } as any,
+    }
+  )
+  const { locale } = await params
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) redirect(`/${locale}`)
   return (
     <div className="space-y-6">
       <Card>
@@ -69,3 +85,5 @@ export default function ProfilePage() {
     </div>
   );
 }
+export const dynamic = 'force-dynamic'
+export const revalidate = 0

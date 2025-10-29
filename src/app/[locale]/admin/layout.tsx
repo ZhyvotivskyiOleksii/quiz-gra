@@ -36,12 +36,54 @@ import {
 import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useCurrentLocale } from '@/lib/i18n/client';
+import { getSupabase } from '@/lib/supabaseClient';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const isMobile = useIsMobile();
   const locale = useCurrentLocale();
+  
+  // Client-side auth guard; adjust to your admin policy later
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const supabase = getSupabase();
+        const { data } = await supabase.auth.getSession();
+        if (!data.session) {
+          router.push(`/` as any);
+        }
+      } catch {
+        router.push(`/` as any);
+      }
+    })();
+  }, []);
+
+  const [userEmail, setUserEmail] = React.useState<string | undefined>(undefined)
+  const [avatarUrl, setAvatarUrl] = React.useState<string | undefined>(undefined)
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const supabase = getSupabase();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          setUserEmail(user.email ?? (user.user_metadata?.email as string | undefined))
+          const viaProvider = (user.user_metadata?.avatar_url || user.user_metadata?.picture) as string | undefined
+          setAvatarUrl(viaProvider)
+        }
+      } catch {}
+    })();
+  }, [])
+
+  const initials = React.useMemo(() => {
+    const e = userEmail || ''
+    const name = e.split('@')[0]
+    if (!name) return 'AD'
+    const parts = name.replace(/[^a-zA-Z0-9]+/g, ' ').trim().split(' ')
+    const a = (parts[0]?.[0] || 'A').toUpperCase()
+    const b = (parts[1]?.[0] || e[0] || 'D').toUpperCase()
+    return `${a}${b}`
+  }, [userEmail])
 
   const menuItems = [
     { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
@@ -56,8 +98,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     router.push(href as any);
   }
   
-  const handleLogout = () => {
-    router.push(`/`);
+  const handleLogout = async () => {
+    try {
+      const supabase = getSupabase();
+      await supabase.auth.signOut();
+    } finally {
+      router.push(`/`);
+    }
   }
 
   const getActiveState = (itemHref: string) => {
@@ -112,8 +159,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="icon" className="overflow-hidden rounded-full">
                   <Avatar>
-                    <AvatarImage data-ai-hint="person face" src="https://picsum.photos/seed/admin/40/40" alt="Admin" />
-                    <AvatarFallback>AD</AvatarFallback>
+                    <AvatarImage data-ai-hint="person face" src={avatarUrl} alt="Admin" />
+                    <AvatarFallback>{initials}</AvatarFallback>
                   </Avatar>
                 </Button>
               </DropdownMenuTrigger>

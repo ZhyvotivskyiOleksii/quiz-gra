@@ -68,10 +68,13 @@
     "marketing_consent_label": "Zgoda marketingowa – (opcjonalnie)",
     "sms_note": "W kolejnym kroku otrzymasz SMS z kodem weryfikacyjnym.",
     "create_account_button": "Utwórz konto",
+    "send_code_button": "Wyślij kod",
     "toast": {
       "success_title": "Rejestracja pomyślna!",
       "success_description": "Możesz się teraz zalogować."
     },
+    "email_exists_short": "Taki email już istnieje. Zaloguj się.",
+    "email_exists_google": "Ten email jest połączony z Google — Zaloguj się przez Google",
     "otp_code_label": "Kod z SMS",
     "resend_code_link": "Wyślij kod ponownie",
     "otp_sent_toast": "Wysłano kod SMS.",

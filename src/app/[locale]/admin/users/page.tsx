@@ -6,8 +6,20 @@ import { Input } from "@/components/ui/input";
 import { Search, MoreHorizontal } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { cookies } from 'next/headers'
+import { createServerClient } from '@supabase/ssr'
+import { redirect } from 'next/navigation'
 
-export default function UsersPage() {
+export default async function UsersPage({ params }: { params: Promise<{ locale: string }> }) {
+  const cookieStore = await cookies()
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookies: { getAll: () => cookieStore.getAll().map(c => ({ name: c.name, value: c.value })) } as any }
+  )
+  const { locale } = await params
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) redirect(`/${locale}`)
   const users = [
     { id: 'usr_1', name: 'Jan Kowalski', email: 'jan.kowalski@example.com', role: 'user', status: 'active', lastLogin: '2024-08-01' },
     { id: 'usr_2', name: 'Anna Nowak', email: 'anna.nowak@example.com', role: 'user', status: 'active', lastLogin: '2024-07-31' },
@@ -87,3 +99,6 @@ export default function UsersPage() {
     </div>
   );
 }
+import { redirect } from 'next/navigation'
+import { cookies } from 'next/headers'
+import { createServerClient } from '@supabase/ssr'

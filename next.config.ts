@@ -1,7 +1,4 @@
 import type {NextConfig} from 'next';
-import withNextIntl from 'next-intl/plugin';
-
-const withNextIntlConfig = withNextIntl('./src/i18n.ts');
 
 const nextConfig: NextConfig = {
   /* config options here */
@@ -11,6 +8,11 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  async redirects() {
+    // Keep empty to avoid accidental cycles during debugging
+    return []
+  },
+  // No rewrites for /login or /register — real pages exist
   images: {
     remotePatterns: [
       {
@@ -34,5 +36,4 @@ const nextConfig: NextConfig = {
     ],
   },
 };
-
-export default withNextIntlConfig(nextConfig);
+export default nextConfig;

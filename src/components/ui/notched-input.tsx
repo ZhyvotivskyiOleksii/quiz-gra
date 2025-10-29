@@ -34,7 +34,7 @@ export const NotchedInput = React.forwardRef<HTMLInputElement, NotchedInputProps
           ref={ref}
           placeholder={ph}
           className={cn(
-            "peer h-12 w-full rounded-md bg-background px-3 pr-10 text-base focus:outline-none md:text-sm",
+            "peer h-10 sm:h-11 w-full rounded-md bg-background px-3 pr-10 text-sm sm:text-base focus:outline-none",
             // Hide the native border; we draw our own with the fieldset
             "border-0 ring-0",
             // Disabled styles parity with default input
@@ -74,7 +74,7 @@ export const NotchedInput = React.forwardRef<HTMLInputElement, NotchedInputProps
         <label
           htmlFor={id}
           className={cn(
-            "absolute left-3 top-1/2 -translate-y-1/2 text-base text-muted-foreground",
+            "absolute left-3 top-1/2 -translate-y-1/2 text-sm sm:text-base text-muted-foreground",
             "transition-all",
             // When focused or filled, float above and shrink
             "peer-focus:-top-2.5 peer-[:not(:placeholder-shown)]:-top-2.5 peer-focus:text-xs peer-[:not(:placeholder-shown)]:text-xs",

@@ -3,27 +3,105 @@
 import * as React from "react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { DayPicker } from "react-day-picker"
+import {
+  Select,
+  SelectTrigger,
+  SelectContent,
+  SelectItem,
+  SelectValue,
+} from "@/components/ui/select"
 
 import { cn } from "@/lib/utils"
 import { buttonVariants } from "@/components/ui/button"
 
-export type CalendarProps = React.ComponentProps<typeof DayPicker>
+export interface CalendarProps extends React.ComponentProps<typeof DayPicker> {
+  withDropdowns?: boolean
+}
 
 function Calendar({
   className,
   classNames,
   showOutsideDays = true,
+  withDropdowns = true,
+  fromYear,
+  toYear,
   ...props
 }: CalendarProps) {
+  const hideCaptionLabel = (props as any)?.captionLayout && (props as any).captionLayout !== 'buttons'
+  const initialMonth = (props as any)?.month || (props as any)?.selected || new Date()
+  const [viewMonth, setViewMonth] = React.useState<Date>(
+    initialMonth instanceof Date ? initialMonth : new Date()
+  )
+  const yFrom = fromYear ?? 1940
+  const yTo = toYear ?? new Date().getFullYear()
+  const years = React.useMemo(() => {
+    const ys: number[] = []
+    for (let y = yTo; y >= yFrom; y--) ys.push(y)
+    return ys
+  }, [yFrom, yTo])
+  const months = React.useMemo(() =>
+    Array.from({ length: 12 }, (_, i) =>
+      new Date(2020, i, 1).toLocaleString(undefined, { month: 'long' })
+    ),
+  [])
+
   return (
-    <DayPicker
+    <div className={cn("p-3", className)}>
+      {withDropdowns && (
+        <div className="mb-2 flex items-center justify-center gap-2">
+          <Select
+            value={String(viewMonth.getMonth())}
+            onValueChange={(v) => {
+              const m = parseInt(v, 10)
+              const next = new Date(viewMonth)
+              next.setMonth(m)
+              setViewMonth(next)
+              ;(props as any)?.onMonthChange?.(next)
+            }}
+          >
+            <SelectTrigger className="h-9 w-[160px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent side="bottom" position="popper">
+              {months.map((label, idx) => (
+                <SelectItem key={idx} value={String(idx)}>{label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={String(viewMonth.getFullYear())}
+            onValueChange={(v) => {
+              const y = parseInt(v, 10)
+              const next = new Date(viewMonth)
+              next.setFullYear(y)
+              setViewMonth(next)
+              ;(props as any)?.onMonthChange?.(next)
+            }}
+          >
+            <SelectTrigger className="h-9 w-[110px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent side="bottom" position="popper">
+              {years.map((y) => (
+                <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+      <DayPicker
       showOutsideDays={showOutsideDays}
-      className={cn("p-3", className)}
+      month={viewMonth}
+      onMonthChange={(d) => {
+        setViewMonth(d)
+        ;(props as any)?.onMonthChange?.(d)
+      }}
+      className={cn("", undefined)}
       classNames={{
         months: "flex flex-col sm:flex-row space-y-4 sm:space-x-4 sm:space-y-0",
         month: "space-y-4",
         caption: "flex justify-center pt-1 relative items-center",
-        caption_label: "text-sm font-medium",
+        caption_label: hideCaptionLabel ? "sr-only" : "text-sm font-medium",
         nav: "space-x-1 flex items-center",
         nav_button: cn(
           buttonVariants({ variant: "outline" }),
@@ -63,6 +141,7 @@ function Calendar({
       }}
       {...props}
     />
+    </div>
   )
 }
 Calendar.displayName = "Calendar"
