@@ -21,7 +21,7 @@ export default async function ProfilePage() {
     }
   )
   const { data: { session } } = await supabase.auth.getSession()
-  if (!session) redirect(`/`)
+  if (!session) redirect('/?auth=login')
 
   return (
     <div className="space-y-6">

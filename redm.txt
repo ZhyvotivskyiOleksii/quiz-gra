@@ -8,3 +8,69 @@ E2bt1ltdqZMQiyLuU0nHwwgkGJ8wrxnK9kgb5N3V
 
 
 Storage → Cookies → http://localhost:9002
+
+
+ssh root@45.148.244.75
+ClqVVFoUW0mMxfLbq6
+
+
+
+
+
+
+rsync -az --delete --exclude ".next" --exclude "node_modules" \
+  "/Users/oleksiizhyvotivskyi/Desktop/quiz-gra/" \
+  root@45.148.244.75:/home/bugsy/quiz-time.pl/
+
+
+
+ssh root@45.148.244.75 '
+  set -e
+  chown -R bugsy:bugsy /home/bugsy/quiz-time.pl
+  su - bugsy -c "
+    [ -s ~/.nvm/nvm.sh ] && . ~/.nvm/nvm.sh && nvm use 22.20.0 >/dev/null
+    cd /home/bugsy/quiz-time.pl
+    npm ci --no-audit --no-fund
+    NODE_ENV=production npm run build
+
+    pm2 delete quiz-time >/dev/null 2>&1 || true
+    PORT=3005 pm2 start npm --name quiz-time --cwd /home/bugsy/quiz-time.pl -- start -- -p 3005
+    pm2 save
+  "
+'
+
+PM2м
+ssh root@45.148.244.75 'su - bugsy -c "pm2 startup systemd -u bugsy --hp /home/bugsy && pm2 save"'
+
+
+
+
+
+💡 Хочешь, чтобы всё было одной командой?
+
+#!/bin/bash
+set -e
+rsync -az --delete --exclude ".next" --exclude "node_modules" \
+  "/Users/oleksiizhyvotivskyi/Desktop/quiz-gra/" \
+  root@45.148.244.75:/home/bugsy/quiz-time.pl/
+
+ssh root@45.148.244.75 '
+  set -e
+  chown -R bugsy:bugsy /home/bugsy/quiz-time.pl
+  su - bugsy -c "
+    [ -s ~/.nvm/nvm.sh ] && . ~/.nvm/nvm.sh && nvm use 22.20.0 >/dev/null
+    cd /home/bugsy/quiz-time.pl
+    npm ci --no-audit --no-fund
+    NODE_ENV=production npm run build
+    pm2 delete quiz-time >/dev/null 2>&1 || true
+    PORT=3005 pm2 start npm --name quiz-time --cwd /home/bugsy/quiz-time.pl -- start -- -p 3005
+    pm2 save
+  "
+'
+
+
+
+
+потом 
+chmod +x deploy-quiz-time.sh
+./deploy-quiz-time.sh

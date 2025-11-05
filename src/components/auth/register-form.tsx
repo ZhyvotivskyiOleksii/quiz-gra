@@ -71,7 +71,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
     try {
-      const phone = values.phone.startsWith('+') ? values.phone : `+${values.phone}`
+      const phone = (values.phone.startsWith('+') ? values.phone : `+${values.phone}`).replace(/[^\d+]/g, '')
 
       const supabase = getSupabase();
 
@@ -89,7 +89,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       // Start OTP sign-in (will create user if not exists)
       const { error } = await supabase.auth.signInWithOtp({
         phone,
-        options: { shouldCreateUser: true },
+        options: { shouldCreateUser: true, channel: 'sms' as any },
       })
 
       if (error) {
@@ -112,7 +112,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
     setIsLoading(true)
     try {
       const supabase = getSupabase();
-      const { data, error } = await supabase.auth.verifyOtp({ phone: pendingPhone, token: otpCode, type: 'sms' })
+      const { data, error } = await supabase.auth.verifyOtp({ phone: pendingPhone.replace(/[^\d+]/g, ''), token: otpCode, type: 'sms' })
       if (error) throw error
       // We have a session now; update profile fields
       if (pendingProfile) {
@@ -176,7 +176,8 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
     try {
       setIsLoading(true)
       const supabase = getSupabase();
-      const { error } = await supabase.auth.signInWithOtp({ phone: pendingPhone })
+      // Resend OTP for an already-started signup. Avoid creating a new user.
+      const { error } = await supabase.auth.signInWithOtp({ phone: pendingPhone.replace(/[^\d+]/g, ''), options: { shouldCreateUser: false, channel: 'sms' as any } })
       if (error) throw error
       toast({ title: 'Wysłano kod SMS.' })
     } catch (err: any) {

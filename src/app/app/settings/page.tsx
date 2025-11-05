@@ -16,6 +16,14 @@ import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 
 export default function SettingsPage() {
+  return (
+    <React.Suspense fallback={<div className="mx-auto w-full max-w-[900px] p-6">Ładowanie…</div>}>
+      <SettingsContent />
+    </React.Suspense>
+  )
+}
+
+function SettingsContent() {
   const router = useRouter()
   const sp = useSearchParams()
   const urlTab = sp?.get('tab') ?? ''

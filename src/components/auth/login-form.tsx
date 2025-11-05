@@ -135,7 +135,7 @@ export function LoginForm({ onSuccess, onSwitchToRegister, initialEmail, initial
         return
       }
       const supabase = getSupabase();
-      const origin = typeof window !== 'undefined' ? window.location.origin : ''
+      const origin = (process.env.NEXT_PUBLIC_SITE_URL as string | undefined) || (typeof window !== 'undefined' ? window.location.origin : '')
       await supabase.auth.resetPasswordForEmail(emailVal, {
         redirectTo: `${origin}/reset-password`,
       })
@@ -148,14 +148,22 @@ export function LoginForm({ onSuccess, onSwitchToRegister, initialEmail, initial
   async function sendOtp() {
     try {
       setIsLoading(true)
-      const phone = otpPhone.startsWith('+') ? otpPhone : `+${otpPhone}`
+      const phoneRaw = otpPhone.trim()
+      const phone = (phoneRaw.startsWith('+') ? phoneRaw : `+${phoneRaw}`).replace(/[^\d+]/g, '')
       const supabase = getSupabase();
-      const { error } = await supabase.auth.signInWithOtp({ phone, options: { shouldCreateUser: false } })
+      // Allow auto‑creation to avoid confusing 422 errors when the phone isn't registered yet.
+      const { error } = await supabase.auth.signInWithOtp({
+        phone,
+        options: { shouldCreateUser: true, channel: 'sms' as any },
+      })
       if (error) throw error
       setOtpSent(true)
       toast({ title: 'Wysłano kod SMS.' })
     } catch (err: any) {
-      toast({ title: 'SMS error', description: err?.message ?? 'Unknown error', variant: 'destructive' as any })
+      const msg = typeof err?.message === 'string' && /signups not allowed/i.test(err.message)
+        ? 'Numer nie jest zarejestrowany, a rejestracja jest wyłączona.'
+        : (err?.message ?? 'Unknown error')
+      toast({ title: 'SMS error', description: msg, variant: 'destructive' as any })
     } finally {
       setIsLoading(false)
     }
@@ -164,7 +172,7 @@ export function LoginForm({ onSuccess, onSwitchToRegister, initialEmail, initial
   async function verifyOtp() {
     try {
       setIsLoading(true)
-      const phone = otpPhone.startsWith('+') ? otpPhone : `+${otpPhone}`
+      const phone = (otpPhone.startsWith('+') ? otpPhone : `+${otpPhone}`).replace(/[^\d+]/g, '')
       const supabase = getSupabase();
       const { data, error } = await supabase.auth.verifyOtp({ phone, token: otpCode, type: 'sms' })
       if (error) throw error
@@ -179,7 +187,7 @@ export function LoginForm({ onSuccess, onSwitchToRegister, initialEmail, initial
           credentials: 'include',
           body: JSON.stringify({ event: 'SIGNED_IN', session: (data as any)?.session }),
         })
-        for (let i = 0; i < 20; i++) {
+        for (let i = 0; i < 50; i++) {
           try {
             const ping = await fetch('/api/auth/ping', { credentials: 'include', cache: 'no-store' })
             const j = await ping.json().catch(() => ({}))
@@ -389,7 +397,7 @@ export function LoginForm({ onSuccess, onSwitchToRegister, initialEmail, initial
             onClick={async () => {
               try {
                 const supabase = getSupabase();
-                const origin = typeof window !== 'undefined' ? window.location.origin : ''
+                const origin = (process.env.NEXT_PUBLIC_SITE_URL as string | undefined) || (typeof window !== 'undefined' ? window.location.origin : '')
                 await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: `${origin}/auth/callback` } })
               } catch (e) {
                 toast({ title: 'Nie udało się rozpocząć logowania Google', variant: 'destructive' as any })

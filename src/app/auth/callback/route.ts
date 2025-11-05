@@ -3,7 +3,12 @@ import { createServerClient } from '@supabase/ssr'
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url)
-  const res = NextResponse.redirect(new URL('/app', url.origin))
+  // Prepare a redirect response that we will reuse to ensure cookies are preserved
+  // Prefer an explicitly configured public site URL to avoid wrong origins
+  // when running behind a proxy or when Host headers are rewritten.
+  const publicBase = process.env.NEXT_PUBLIC_SITE_URL || url.origin
+  const to = new URL(url.searchParams.get('from') || '/app', publicBase)
+  const res = NextResponse.redirect(to)
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -30,13 +35,12 @@ export async function GET(req: NextRequest) {
     }
   } catch {}
 
-  const from = url.searchParams.get('from')
-  if (from) return NextResponse.redirect(new URL(from, url.origin))
   return res
 }
 
 // Sync auth cookies for email/password or SMS flows
 export async function POST(req: NextRequest) {
+  // Always return the same Response instance we attach cookies to
   const res = NextResponse.json({ ok: true })
 
   const supabase = createServerClient(
@@ -58,7 +62,7 @@ export async function POST(req: NextRequest) {
 
     if (event === 'SIGNED_OUT' || !session?.access_token || !session?.refresh_token) {
       try { await supabase.auth.signOut() } catch {}
-      return NextResponse.json({ ok: true })
+      return res
     }
 
     await supabase.auth.setSession({
@@ -67,6 +71,7 @@ export async function POST(req: NextRequest) {
     })
     return res
   } catch {
+    // Return the same response, but with an error code
     return NextResponse.json({ ok: false }, { status: 400 })
   }
 }

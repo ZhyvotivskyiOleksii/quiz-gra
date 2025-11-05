@@ -42,7 +42,7 @@ export default function Home() {
         </div>
         <div className="absolute inset-0 z-0 hidden dark:block bg-gradient-to-b from-black/70 via-black/60 to-black/80" />
 
-        <div className="relative z-10 w-full max-w-[1440px] mx-auto px-4 md:px-10 py-10 md:py-14 animate-fade-in-up text-foreground">
+        <div className="relative z-10 w-full max-w-[1440px] mx-auto px-15 py-10 md:py-14 animate-fade-in-up text-foreground">
           {/* Top swipeable banners - sportsbook style */}
           <HeroBanners />
 
@@ -83,7 +83,7 @@ export default function Home() {
       </section>
 
       <section id="features" className="w-full py-12 md:py-24 lg:py-32 bg-background">
-        <div className="container mx-auto px-4 md:px-6">
+        <div className="container mx-auto px-15">
           <div className="flex flex-col items-center justify-center space-y-4 text-center">
             <div className="space-y-2">
               <div className="inline-block rounded-lg bg-muted px-3 py-1 text-sm">Kluczowe Funkcje</div>

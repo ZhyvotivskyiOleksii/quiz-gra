@@ -31,8 +31,8 @@ export function Header() {
   React.useEffect(() => {
     (async () => {
       const supabase = getSupabase();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
+      const { data: { user }, error: userErr } = await supabase.auth.getUser();
+      if (user && !userErr) {
         setUserEmail(user.email ?? (user.user_metadata?.email as string | undefined))
         // 1) read avatar from auth metadata/provider
         let nextAvatar = (user.user_metadata?.avatar_url || user.user_metadata?.picture) as string | undefined
@@ -54,6 +54,23 @@ export function Header() {
         try {
           const { data: sid } = await supabase.rpc('get_or_create_short_id')
           if (sid) setShortId(String(sid))
+        } catch {}
+        // Ensure server-side cookies exist if client has a session
+        try {
+          // quick ping to see if server sees session
+          const ping = await fetch('/api/auth/ping', { credentials: 'include', cache: 'no-store' })
+          const pj = await ping.json().catch(() => ({} as any))
+          if (!pj?.ok) {
+            const { data: sess } = await supabase.auth.getSession()
+            if (sess?.session?.access_token && sess?.session?.refresh_token) {
+              await fetch('/auth/callback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ event: 'SIGNED_IN', session: sess.session }),
+              })
+            }
+          }
         } catch {}
         // Auto-promote by env if configured
         try {
@@ -136,6 +153,20 @@ export function Header() {
     return `${first}${second}`
   }, [userEmail])
 
+  const handleLogout = async () => {
+    const s = getSupabase();
+    try { await s.auth.signOut() } catch {}
+    try {
+      await fetch('/auth/callback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ event: 'SIGNED_OUT' }),
+      })
+    } catch {}
+    try { router.push('/') } catch {}
+  }
+
   const handleLoginSuccess = () => {
     setOpen(false);
     setTimeout(() => setAuthView('login'), 300);
@@ -154,7 +185,7 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-16 items-center max-w-[1440px] mx-auto px-10">
+      <div className="flex h-16 items-center w-full max-w-[1440px] mx-auto px-[60px]">
         <Logo />
         <div className="flex flex-1 items-center justify-end space-x-4">
           <nav className="flex items-center space-x-2">
@@ -268,16 +299,3 @@ export function Header() {
     </header>
   );
 }
-  const handleLogout = async () => {
-    const s = getSupabase();
-    try { await s.auth.signOut() } catch {}
-    try {
-      await fetch('/auth/callback', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ event: 'SIGNED_OUT' }),
-      })
-    } catch {}
-    try { router.push('/') } catch {}
-  }

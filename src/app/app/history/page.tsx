@@ -17,7 +17,7 @@ export default async function HistoryPage() {
     }
   )
   const { data: { session } } = await supabase.auth.getSession()
-  if (!session) redirect(`/`)
+  if (!session) redirect('/?auth=login')
 
   const gameHistory = [
     { id: 'g_1', date: '2024-08-01', score: 4, settled: true },

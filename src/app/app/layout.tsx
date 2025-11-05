@@ -29,6 +29,7 @@ import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { getSupabase } from '@/lib/supabaseClient';
 import { ThemeSwitcher } from '@/components/shared/theme-switcher';
+import TopBar from '@/components/shared/topbar';
 // SidebarMenuBadge not needed; integrate badge inline within button
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -103,7 +104,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const menuItems = [
     { href: '/app', label: 'Panel', icon: LayoutDashboard },
-    { href: '/app/play', label: 'Graj', icon: Play },
+    { href: '/app/play', label: 'SuperGame', icon: Play },
     { href: '/app/history', label: 'Historia', icon: History },
   ];
   
@@ -203,26 +204,26 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </SidebarFooter>
       </Sidebar>
       <SidebarInset>
-        <header className="sticky top-0 z-40 flex h-16 items-center gap-4 bg-background px-4 md:px-6">
+        <TopBar>
           <SidebarTrigger className="md:hidden" />
           <div className="ml-auto flex items-center gap-2 md:gap-4">
-            {/* Header quick switch: Panel <-> Graj */}
+            {/* Header quick switch: Panel <-> SuperGame */}
             <div className="hidden md:flex items-center rounded-full bg-muted/60 p-1">
               <Button
                 size="sm"
-                variant={pathname === '/app' ? 'secondary' : 'ghost'}
-                className={pathname === '/app' ? 'h-8 px-4 rounded-full' : 'h-8 px-4 rounded-full'}
+                variant={pathname === '/app' ? 'default' : 'ghost'}
+                className={pathname === '/app' ? 'h-10 px-4 rounded-full bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:from-indigo-700 hover:to-violet-700 shadow-md !bg-gradient-to-r !from-indigo-600 !to-violet-600 !text-white' : 'h-10 px-4 rounded-full'}
                 onClick={() => handleNavigate('/app')}
               >
                 Panel
               </Button>
               <Button
                 size="sm"
-                variant={pathname?.startsWith('/app/play') ? 'secondary' : 'ghost'}
-                className={pathname?.startsWith('/app/play') ? 'h-8 px-4 rounded-full' : 'h-8 px-4 rounded-full'}
+                variant={pathname?.startsWith('/app/play') ? 'default' : 'ghost'}
+                className={pathname?.startsWith('/app/play') ? 'h-10 px-4 rounded-full bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:from-indigo-700 hover:to-violet-700 shadow-md !bg-gradient-to-r !from-indigo-600 !to-violet-600 !text-white' : 'h-10 px-4 rounded-full'}
                 onClick={() => handleNavigate('/app/play')}
               >
-                Graj
+                SuperGame
               </Button>
             </div>
             <Button variant="ghost" size="icon" aria-label="Powiadomienia" className="rounded-full">
@@ -261,8 +262,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-        </header>
-        <main className="flex-1 overflow-auto p-4 sm:p-6">{children}</main>
+        </TopBar>
+        <main className="flex-1 overflow-auto px-15 py-4 sm:py-6">{children}</main>
       </SidebarInset>
     </SidebarProvider>
   );

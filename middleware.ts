@@ -3,7 +3,8 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 
 export async function middleware(req: NextRequest) {
-  const res = NextResponse.next()
+  // Forward request headers to ensure auth headers/cookies are preserved
+  const res = NextResponse.next({ request: { headers: req.headers } })
 
   // Supabase SSR expects cookies with get/set/remove in middleware
   const supabase = createServerClient(
@@ -42,6 +43,7 @@ export const config = {
   matcher: [
     '/app/:path*',
     '/admin/:path*',
-    '/:locale([a-z]{2}(?:-[A-Z]{2})?)/(app|admin)/:path*',
+    '/:locale([a-z]{2}(?:-[A-Z]{2})?)/app/:path*',
+    '/:locale([a-z]{2}(?:-[A-Z]{2})?)/admin/:path*',
   ],
 }

@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { getSupabase } from '@/lib/supabaseClient';
 import { ThemeSwitcher } from '@/components/shared/theme-switcher';
+import TopBar from '@/components/shared/topbar';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -112,16 +113,39 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <Logo />
         </SidebarHeader>
         <SidebarContent>
-          <SidebarMenu>
-            {menuItems.map((item) => (
-              <SidebarMenuItem key={item.href}>
-                <SidebarMenuButton onClick={() => handleNavigate(item.href)} isActive={getActiveState(item.href)} tooltip={{ children: item.label, side: 'right', align: 'center' }}>
-                  <item.icon />
-                  <span>{item.label}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            ))}
-          </SidebarMenu>
+          {/* Group header card like client panel */}
+          <div className="mx-2 mb-2 rounded-2xl bg-white/5 dark:bg-white/5 border border-white/10 px-3 py-2 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => handleNavigate('/admin')}
+              className="flex items-center gap-2 text-sm font-semibold text-foreground/90 hover:text-foreground"
+            >
+              <LayoutDashboard className="h-4 w-4" />
+              <span>Admin Panel</span>
+            </button>
+            <span aria-label="status" className="inline-block h-2.5 w-2.5 rounded-full bg-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.15)]" />
+          </div>
+
+          {/* Bubble style nav items inside a soft card */}
+          <div className="mx-2 rounded-2xl bg-white/[0.04] border border-white/10 p-2">
+            <SidebarMenu>
+              {menuItems.map((item) => (
+                <SidebarMenuItem key={item.href}>
+                  <SidebarMenuButton
+                    variant="bubble"
+                    size="lg"
+                    className="justify-start text-foreground/85 hover:text-red-500"
+                    onClick={() => handleNavigate(item.href)}
+                    isActive={getActiveState(item.href)}
+                    tooltip={{ children: item.label, side: 'right', align: 'center' }}
+                  >
+                    <item.icon className="h-4 w-4" />
+                    <span>{item.label}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </div>
         </SidebarContent>
         <SidebarFooter>
           <SidebarMenu>
@@ -145,7 +169,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </SidebarFooter>
       </Sidebar>
       <SidebarInset>
-        <header className="sticky top-0 z-40 flex h-16 items-center gap-4 bg-background px-4 md:px-6 border-b border-border/40">
+        <TopBar>
           <SidebarTrigger className="md:hidden" />
           <div className="ml-auto flex items-center gap-2 md:gap-4">
             <ThemeSwitcher />
@@ -174,8 +198,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-        </header>
-        <main className="flex-1 overflow-auto p-4 sm:p-6">{children}</main>
+        </TopBar>
+        <main className="flex-1 overflow-auto px-15 py-4 sm:py-6">{children}</main>
       </SidebarInset>
     </SidebarProvider>
   );

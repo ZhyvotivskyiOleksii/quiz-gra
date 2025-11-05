@@ -15,14 +15,19 @@ export default async function AppDashboard() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get: (name: string) => cookieStore.get(name)?.value,
-        set: (name: string, value: string, options: any) => { try { cookieStore.set({ name, value, ...options }) } catch {} },
-        remove: (name: string, options: any) => { try { cookieStore.set({ name, value: '', ...options, maxAge: 0 }) } catch {} },
-      },
+        getAll: () => cookieStore.getAll().map((c) => ({ name: c.name, value: c.value })),
+      } as any,
     }
   )
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) redirect('/?auth=login')
+  // Load a few active quizzes for the dashboard
+  const { data: active } = await supabase
+    .from('rounds')
+    .select('id,label,deadline_at,leagues(name,code),quizzes(*)')
+    .eq('status','published')
+    .order('deadline_at',{ ascending: true })
+    .limit(5)
   return (
     <div className="mx-auto w-full max-w-[1200px] space-y-6">
       {/* Nagłówek i szybkie akcje */}
@@ -39,8 +44,15 @@ export default async function AppDashboard() {
       {/* Statystyki */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <Card className="relative overflow-hidden shadow-xl shadow-black/10 transition-shadow hover:shadow-2xl bg-gradient-to-br from-white/5 to-transparent dark:from-white/10">
-          <div className="pointer-events-none absolute inset-y-0 right-0 w-1/2">
-            <Image src="/panel/1.png" alt="Punkty" fill className="object-contain object-right opacity-95" sizes="(min-width:1024px) 50vw, 50vw" />
+          <div className="pointer-events-none absolute inset-y-0 right-0 w-1/2 flex items-end justify-end">
+            <Image
+              src="/panel/1.png"
+              alt="Punkty"
+              width={600}
+              height={600}
+              className="h-full w-auto opacity-95"
+              priority={false}
+            />
           </div>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Zdobyte punkty</CardTitle>
@@ -52,8 +64,14 @@ export default async function AppDashboard() {
         </Card>
 
         <Card className="relative overflow-hidden shadow-xl shadow-black/10 transition-shadow hover:shadow-2xl bg-gradient-to-br from-white/5 to-transparent dark:from-white/10">
-          <div className="pointer-events-none absolute inset-y-0 right-0 w-1/2">
-            <Image src="/panel/2.png" alt="Próby" fill className="object-contain object-right opacity-95" sizes="(min-width:1024px) 50vw, 50vw" />
+          <div className="pointer-events-none absolute inset-y-0 right-0 w-1/2 flex items-end justify-end">
+            <Image
+              src="/panel/2.png"
+              alt="Próby"
+              width={600}
+              height={600}
+              className="h-full w-auto opacity-95"
+            />
           </div>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Podejścia do quizów</CardTitle>
@@ -65,8 +83,14 @@ export default async function AppDashboard() {
         </Card>
 
         <Card className="relative overflow-hidden shadow-xl shadow-black/10 transition-shadow hover:shadow-2xl bg-gradient-to-br from-white/5 to-transparent dark:from-white/10">
-          <div className="pointer-events-none absolute inset-y-0 right-0 w-1/2">
-            <Image src="/panel/3.png" alt="Ranking" fill className="object-contain object-right opacity-95" sizes="(min-width:1024px) 50vw, 50vw" />
+          <div className="pointer-events-none absolute inset-y-0 right-0 w-1/2 flex items-end justify-end">
+            <Image
+              src="/panel/3.png"
+              alt="Ranking"
+              width={600}
+              height={600}
+              className="h-full w-auto opacity-95"
+            />
           </div>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Pozycja w rankingu</CardTitle>
@@ -131,6 +155,33 @@ export default async function AppDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Active quizzes */}
+      {Array.isArray(active) && active.length > 0 && (
+        <div className="grid grid-cols-1 gap-4">
+          <Card className="shadow-xl shadow-black/10">
+            <CardHeader>
+              <CardTitle>Aktywne wiktoryny</CardTitle>
+              <CardDescription>Dołącz zanim upłynie termin</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {active.map((r:any) => (
+                <div key={r.id} className="flex items-center justify-between rounded-lg bg-card px-4 py-3 shadow-md shadow-black/10">
+                  <div>
+                    <div className="font-medium">{r.leagues?.name} — {r.label}</div>
+                    <div className="text-xs text-muted-foreground">Do: {new Date(r.deadline_at).toLocaleString('pl-PL')}</div>
+                  </div>
+                  {r.quizzes?.[0] && (
+                    <Button asChild size="sm">
+                      <Link href={`/app/quizzes/${r.quizzes[0].id}`}>Otwórz</Link>
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }

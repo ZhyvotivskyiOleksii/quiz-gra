@@ -4,24 +4,24 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%; /* #ffffff */
-    --foreground: 240 7% 10%; /* #1b1b1b */
+    --background: 0 0% 100%; /* #ffffff - чисто белый */
+    --foreground: 240 10% 3.9%; /* #0f0f0f - очень темный для максимального контраста */
     --card: 0 0% 100%;
-    --card-foreground: 240 7% 10%;
+    --card-foreground: 240 10% 3.9%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 7% 10%;
+    --popover-foreground: 240 10% 3.9%;
     --primary: 359 99% 46%; /* #E80104 */
     --primary-foreground: 0 0% 98%; /* #fafafa */
-    --secondary: 0 0% 96.1%; /* #f5f5f5 */
-    --secondary-foreground: 240 7% 10%;
-    --muted: 0 0% 96.1%;
-    --muted-foreground: 240 4% 46%; /* #757575 */
-    --accent: 0 0% 96.1%;
-    --accent-foreground: 240 7% 10%;
+    --secondary: 0 0% 90%; /* #e6e6e6 - более выраженный серый для secondary */
+    --secondary-foreground: 240 10% 3.9%;
+    --muted: 0 0% 88%; /* #e0e0e0 - еще более выраженный серый для muted */
+    --muted-foreground: 240 6% 25%; /* #6b6b6b - очень темный для muted текста */
+    --accent: 0 0% 90%;
+    --accent-foreground: 240 10% 3.9%;
     --destructive: 359 99% 46%;
     --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 89.8%; /* #e5e5e5 */
-    --input: 0 0% 89.8%;
+    --border: 0 0% 80%; /* #cccccc - очень выраженные границы */
+    --input: 0 0% 85%; /* #d9d9d9 - более темные инпуты */
     --ring: 359 99% 46%;
     --chart-1: 359 99% 46%;
     --chart-2: 0 80% 65%;
@@ -29,15 +29,15 @@
     --chart-4: 0 0% 80%;
     --chart-5: 210 40% 96.1%;
     --radius: 0.5rem;
-    /* Light theme: slightly tinted surface for app content (right of sidebar) */
-    --app-surface: 0 0% 97.5%;
+    /* Light theme: чисто белый фон для контента */
+    --app-surface: 0 0% 100%;
     --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 240 7% 10%;
+    --sidebar-foreground: 240 10% 3.9%;
     --sidebar-primary: 359 99% 46%;
     --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 0 0% 93%;
-    --sidebar-accent-foreground: 240 7% 10%;
-    --sidebar-border: 0 0% 89.8%;
+    --sidebar-accent: 0 0% 85%; /* #d9d9d9 - более выраженный акцент */
+    --sidebar-accent-foreground: 240 10% 3.9%;
+    --sidebar-border: 0 0% 80%;
     --sidebar-ring: 359 99% 46%;
   }
 

@@ -1,137 +1,464 @@
 "use client";
 import * as React from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { getSupabase } from '@/lib/supabaseClient'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import NotchedInput from '@/components/ui/notched-input'
+import { useToast } from '@/hooks/use-toast'
 import { Label } from '@/components/ui/label'
-import { getSupabase } from '@/lib/supabaseClient'
+import ImageUploader from '@/components/admin/image-uploader'
 
-export default function EditQuizPage() {
+type QuizRow = { id: string; title: string; round_id: string }
+type RoundRow = {
+  id: string; label: string; starts_at: string | null; deadline_at: string | null; timezone: string | null; status: 'draft'|'published'|'locked'|'settled';
+  leagues?: { name?: string | null, code?: string | null } | null
+}
+
+export default function AdminQuizDetailsPage() {
+  const { id } = useParams<{ id: string }>()
+  const { toast } = useToast()
   const router = useRouter()
-  const params = useParams<{ id: string }>()
-  const id = params?.id as string
-  const [quiz, setQuiz] = React.useState<any | null>(null)
-  const [round, setRound] = React.useState<any | null>(null)
+  const [quiz, setQuiz] = React.useState<QuizRow | null>(null)
+  const [round, setRound] = React.useState<RoundRow | null>(null)
+  const [title, setTitle] = React.useState('')
+  const [label, setLabel] = React.useState('')
+  const [startsAt, setStartsAt] = React.useState('')
+  const [deadlineAt, setDeadlineAt] = React.useState('')
+  const [imageUrl, setImageUrl] = React.useState('')
+  const [prize, setPrize] = React.useState<string>('')
   const [saving, setSaving] = React.useState(false)
-  const [qCount, setQCount] = React.useState(0)
-  const [mCount, setMCount] = React.useState(0)
+  // Questions state
+  const [qs, setQs] = React.useState<any[]>([])
+  const [qLoading, setQLoading] = React.useState(true)
+  const [qKind, setQKind] = React.useState<'history_single'|'history_numeric'|'future_1x2'|'future_score'>('history_single')
+  const [qPrompt, setQPrompt] = React.useState('')
+  const [qOptions, setQOptions] = React.useState<string[]>([''])
+  const [matches, setMatches] = React.useState<any[]>([])
+  const [editing, setEditing] = React.useState<string | null>(null)
+  const [editData, setEditData] = React.useState<any>({})
 
-  React.useEffect(() => {
-    (async () => {
+  async function load() {
+    const s = getSupabase()
+    const { data: q, error: qerr } = await s.from('quizzes').select('id,title,round_id,image_url,prize').eq('id', id).maybeSingle()
+    if (qerr || !q) { toast({ title: 'Nie znaleziono wiktoryny', variant: 'destructive' as any }); return }
+    setQuiz(q as QuizRow)
+    setTitle((q as any).title || '')
+    setImageUrl((q as any).image_url || '')
+    setPrize(((q as any).prize ?? '') as any)
+    const { data: r } = await s.from('rounds').select('id,label,starts_at,deadline_at,timezone,status,leagues(name,code)').eq('id', (q as any).round_id).maybeSingle()
+    if (r) {
+      setRound(r as any)
+      setLabel((r as any).label || '')
+      setStartsAt((r as any).starts_at ? (r as any).starts_at.substring(0,16) : '')
+      setDeadlineAt((r as any).deadline_at ? (r as any).deadline_at.substring(0,16) : '')
+    }
+  }
+
+  React.useEffect(() => { load() }, [id])
+  React.useEffect(() => { loadQuestions() }, [quiz?.id])
+  React.useEffect(() => { loadMatches() }, [round?.id])
+
+  async function loadQuestions() {
+    if (!id) return
+    setQLoading(true)
+    try {
       const s = getSupabase()
-      const { data: q } = await s.from('quizzes').select('*').eq('id', id).single()
-      setQuiz(q)
-      if (q) {
-        const { data: r } = await s.from('rounds').select('*, leagues(name,code)').eq('id', q.round_id).single()
-        setRound(r)
-        const { count: qc } = await s.from('quiz_questions').select('*', { count: 'exact', head: true }).eq('quiz_id', id)
-        setQCount(qc || 0)
-        const { count: mc } = await s.from('matches').select('*', { count: 'exact', head: true }).eq('round_id', r.id).eq('enabled', true)
-        setMCount(mc || 0)
-      }
-    })()
-  }, [id])
+      const { data } = await s
+        .from('quiz_questions')
+        .select('id,kind,prompt,options,order_index')
+        .eq('quiz_id', id)
+        .order('order_index', { ascending: true })
+      setQs(data || [])
+    } finally { setQLoading(false) }
+  }
+
+  async function loadMatches() {
+    if (!round?.id) return
+    try {
+      const s = getSupabase()
+      const { data } = await s
+        .from('matches')
+        .select('id,home_team,away_team,kickoff_at')
+        .eq('round_id', round.id)
+        .order('kickoff_at', { ascending: true })
+      setMatches(data || [])
+    } catch {}
+  }
 
   async function saveBasics() {
+    if (!quiz || !round) return
     setSaving(true)
     try {
       const s = getSupabase()
-      await s.from('quizzes').update({
-        title: quiz.title,
-        description: quiz.description,
-        points_history: quiz.points_history,
-        points_future_exact: quiz.points_future_exact,
-        points_score_exact: quiz.points_score_exact,
-        points_score_tendency: quiz.points_score_tendency,
-      }).eq('id', id)
-      await s.from('rounds').update({ label: round.label, starts_at: round.starts_at, deadline_at: round.deadline_at }).eq('id', round.id)
+      if (title !== quiz.title || imageUrl || prize !== '') {
+        const upd: any = { title }
+        if (imageUrl !== undefined) upd.image_url = imageUrl || null
+        if (prize !== '') upd.prize = Number(prize)
+        const { error } = await s.from('quizzes').update(upd).eq('id', quiz.id)
+        if (error) throw error
+      }
+      const upd: any = {}
+      if (label !== round.label) upd.label = label
+      // Normalize to ISO without seconds; Supabase accepts both
+      if (startsAt) upd.starts_at = startsAt
+      if (deadlineAt) upd.deadline_at = deadlineAt
+      if (Object.keys(upd).length) {
+        const { error } = await s.from('rounds').update(upd).eq('id', round.id)
+        if (error) throw error
+      }
+      toast({ title: 'Zapisano zmiany' })
+      await load()
+    } catch (e: any) {
+      toast({ title: 'Błąd zapisu', description: e?.message ?? '', variant: 'destructive' as any })
     } finally { setSaving(false) }
   }
 
-  async function publish(status: 'published'|'locked'|'settled') {
-    const s = getSupabase();
-    await s.from('rounds').update({ status }).eq('id', round.id)
-    router.refresh()
+  async function togglePublish() {
+    if (!round) return
+    setSaving(true)
+    try {
+      const s = getSupabase()
+      const next = round.status === 'published' ? 'draft' : 'published'
+      const { error } = await s.from('rounds').update({ status: next }).eq('id', round.id)
+      if (error) throw error
+      toast({ title: next === 'published' ? 'Opublikowano' : 'Wycofano publikację' })
+      await load()
+    } catch (e: any) {
+      toast({ title: 'Błąd zmiany statusu', description: e?.message ?? '', variant: 'destructive' as any })
+    } finally { setSaving(false) }
   }
 
-  async function recalc() {
-    const s = getSupabase();
-    await s.rpc('settle_quiz', { p_quiz: id })
+  // --- Questions helpers ---
+  function resetNewQ() {
+    setQKind('history_single')
+    setQPrompt('')
+    setQOptions([''])
+  }
+  function updateOption(i: number, v: string) {
+    setQOptions((prev) => prev.map((x, idx) => (idx === i ? v : x)))
+  }
+  function removeOption(i: number) {
+    setQOptions((prev) => prev.filter((_, idx) => idx !== i))
   }
 
-  async function genHistory3() {
-    const s = getSupabase();
-    const existing = await s.from('quiz_questions').select('id').eq('quiz_id', id).ilike('kind','history_%')
-    if ((existing.data?.length||0) >= 3) return
-    const base = [
-      { prompt: 'Kto był królem strzelców poprzedniego sezonu?', options: [{id:'A',text:'Opcja A'},{id:'B',text:'Opcja B'},{id:'C',text:'Opcja C'}], correct: { id: 'A' } },
-      { prompt: 'Ile drużyn spadło w poprzednim sezonie?', options: [{id:'2',text:'2'},{id:'3',text:'3'},{id:'4',text:'4'}], correct: { id: '3' } },
-      { prompt: 'Mistrzem był…', options: [{id:'X',text:'Zespół X'},{id:'Y',text:'Zespół Y'}], correct: { id: 'Y' } },
-    ]
-    await s.from('quiz_questions').insert(base.map((b,idx)=>({ quiz_id: id, kind: 'history_single', prompt: b.prompt, options: b.options, correct: b.correct, order_index: idx })))
-    const { count: qc } = await s.from('quiz_questions').select('*', { count: 'exact', head: true }).eq('quiz_id', id)
-    setQCount(qc || 0)
+  async function addQuestion() {
+    try {
+      const s = getSupabase()
+      let options: any = null
+      if (qKind === 'history_single' || qKind === 'future_1x2') {
+        const opts = (qOptions || []).map((o) => o.trim()).filter(Boolean)
+        if (!opts.length) {
+          if (qKind === 'future_1x2') options = ['Gospodarze', 'Remis', 'Goście']
+          else return toast({ title: 'Dodaj co najmniej jedną opcję', variant: 'destructive' as any })
+        } else options = opts
+      }
+      const order = (qs[qs.length - 1]?.order_index ?? -1) + 1
+      const { error } = await s.from('quiz_questions').insert({
+        quiz_id: id,
+        kind: qKind,
+        prompt: qPrompt,
+        options,
+        order_index: order,
+        match_id: null,
+      } as any)
+      if (error) throw error
+      resetNewQ()
+      await loadQuestions()
+      toast({ title: 'Dodano pytanie' })
+    } catch (e: any) {
+      toast({ title: 'Błąd', description: e?.message ?? '', variant: 'destructive' as any })
+    }
   }
 
-  async function genMatch1x2() {
-    const s = getSupabase();
-    const { data: ms } = await s.from('matches').select('id,home_team,away_team').eq('round_id', round.id).eq('enabled', true).order('kickoff_at')
-    if (!ms) return
-    const toInsert = ms.map((m:any, i:number)=>({
-      quiz_id: id,
-      match_id: m.id,
-      kind: 'future_1x2',
-      prompt: `${m.home_team} vs ${m.away_team}: 1X2?`,
-      options: [{id:'1',text:'1'},{id:'X',text:'X'},{id:'2',text:'2'}],
-      order_index: 100 + i
-    }))
-    await s.from('quiz_questions').insert(toInsert)
-    const { count: qc } = await s.from('quiz_questions').select('*', { count: 'exact', head: true }).eq('quiz_id', id)
-    setQCount(qc || 0)
+  async function addQuestionWithMatch() {
+    // Wraps addQuestion to append selected match from editor state on create form
+    if (qKind === 'future_1x2' || qKind === 'future_score') {
+      const mId = (editData as any)?.new_match_id || null
+      if (!mId) {
+        toast({ title: 'Wybierz mecz dla pytania', variant: 'destructive' as any })
+        return
+      }
+      // Temporarily set match in local addQuestion flow by pushing directly via API to keep code small
+      try {
+        const s = getSupabase()
+        const order = (qs[qs.length - 1]?.order_index ?? -1) + 1
+        let options: any = null
+        if (qKind === 'history_single' || qKind === 'future_1x2') {
+          const opts = (qOptions || []).map((o) => o.trim()).filter(Boolean)
+          options = opts.length ? opts : (qKind === 'future_1x2' ? ['1','X','2'] : null)
+        }
+        const { error } = await s.from('quiz_questions').insert({
+          quiz_id: id,
+          kind: qKind,
+          prompt: qPrompt,
+          options,
+          order_index: order,
+          match_id: mId,
+        } as any)
+        if (error) throw error
+        setEditData((d:any)=>({ ...d, new_match_id: '' }))
+        resetNewQ()
+        await loadQuestions()
+        toast({ title: 'Dodano pytanie' })
+      } catch (e:any) {
+        toast({ title: 'Błąd', description: e?.message ?? '', variant: 'destructive' as any })
+      }
+      return
+    }
+    await addQuestion()
   }
 
-  if (!quiz || !round) return <div className="container max-w-xl mx-auto p-6">Ładowanie…</div>
+  function startEdit(q:any) {
+    setEditing(q.id)
+    const def: any = { prompt: q.prompt, match_id: q.match_id || '' }
+    if (q.kind === 'history_numeric' && q.options) {
+      def.min = q.options?.min ?? 0
+      def.max = q.options?.max ?? 6
+      def.step = q.options?.step ?? 1
+    }
+    if (q.kind === 'future_score' && q.options) {
+      def.min_home = q.options?.min_home ?? 0
+      def.max_home = q.options?.max_home ?? 10
+      def.min_away = q.options?.min_away ?? 0
+      def.max_away = q.options?.max_away ?? 10
+    }
+    setEditData(def)
+  }
+
+  async function saveEdit(idQ: string, kind: string) {
+    try {
+      const s = getSupabase()
+      const upd: any = { prompt: editData.prompt }
+      if (kind === 'future_1x2' || kind === 'future_score') upd.match_id = editData.match_id || null
+      if (kind === 'history_numeric') upd.options = { min: Number(editData.min ?? 0), max: Number(editData.max ?? 6), step: Number(editData.step ?? 1) }
+      if (kind === 'future_score') upd.options = { min_home: Number(editData.min_home ?? 0), max_home: Number(editData.max_home ?? 10), min_away: Number(editData.min_away ?? 0), max_away: Number(editData.max_away ?? 10) }
+      const { error } = await s.from('quiz_questions').update(upd).eq('id', idQ)
+      if (error) throw error
+      setEditing(null)
+      await loadQuestions()
+      toast({ title: 'Zapisano pytanie' })
+    } catch (e:any) {
+      toast({ title: 'Błąd zapisu', description: e?.message ?? '', variant: 'destructive' as any })
+    }
+  }
+
+  async function removeQuestion(idQ: string) {
+    const ok = typeof window !== 'undefined' ? window.confirm('Usunąć pytanie?') : true
+    if (!ok) return
+    const s = getSupabase()
+    await s.from('quiz_questions').delete().eq('id', idQ)
+    await loadQuestions()
+  }
+
+  async function moveQuestion(idQ: string, delta: number) {
+    const idx = qs.findIndex((q) => q.id === idQ)
+    if (idx < 0) return
+    const target = idx + delta
+    if (target < 0 || target >= qs.length) return
+    const a = qs[idx], b = qs[target]
+    const s = getSupabase()
+    await s.from('quiz_questions').update({ order_index: b.order_index }).eq('id', a.id)
+    await s.from('quiz_questions').update({ order_index: a.order_index }).eq('id', b.id)
+    await loadQuestions()
+  }
+
+  async function deleteQuiz() {
+    if (!quiz) return
+    const ok = typeof window !== 'undefined' ? window.confirm('Usunąć tę wiktorynę? Tego nie można cofnąć.') : true
+    if (!ok) return
+    setSaving(true)
+    try {
+      const s = getSupabase()
+      // 1) Answers (need submission ids)
+      const { data: subs } = await s.from('quiz_submissions').select('id').eq('quiz_id', quiz.id)
+      const subIds = (subs || []).map((x:any) => x.id)
+      if (subIds.length > 0) {
+        await s.from('quiz_answers').delete().in('submission_id', subIds)
+      }
+      // 2) Results
+      await s.from('quiz_results').delete().eq('quiz_id', quiz.id)
+      // 3) Questions
+      await s.from('quiz_questions').delete().eq('quiz_id', quiz.id)
+      // 4) Submissions
+      await s.from('quiz_submissions').delete().eq('quiz_id', quiz.id)
+      // 5) Quiz itself
+      await s.from('quizzes').delete().eq('id', quiz.id)
+      // 6) Remove round if empty
+      const { data: others } = await s.from('quizzes').select('id').eq('round_id', (quiz as any).round_id).limit(1)
+      if (!others || others.length === 0) {
+        await s.from('rounds').delete().eq('id', (quiz as any).round_id)
+      }
+      toast({ title: 'Usunięto wiktorynę' })
+      router.replace('/admin/quizzes')
+    } catch (e: any) {
+      toast({ title: 'Błąd usuwania', description: e?.message ?? '', variant: 'destructive' as any })
+    } finally { setSaving(false) }
+  }
+
+  if (!quiz || !round) {
+    return (
+      <div className="mx-auto w-full max-w-[900px] p-6">Ładowanie…</div>
+    )
+  }
 
   return (
-    <div className="mx-auto w-full max-w-[1000px] space-y-4">
+    <div className="mx-auto w-full max-w-[900px] space-y-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-headline font-extrabold uppercase">Quiz: {quiz.title}</h1>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={saveBasics} disabled={saving}>Zapisz</Button>
+          <Button onClick={togglePublish} disabled={saving}>
+            {round.status === 'published' ? 'Wycofaj publikację' : 'Opublikuj'}
+          </Button>
+          <Button variant="destructive" onClick={deleteQuiz} disabled={saving}>Usuń</Button>
+        </div>
+      </div>
+
       <Card>
-        <CardHeader><CardTitle>Edycja — {round.leagues?.name} • {round.label}</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
-          <NotchedInput label={'Tytuł'} value={quiz.title || ''} onChange={(e:any)=>setQuiz({...quiz, title: e.target.value})} />
-          <NotchedInput label={'Opis'} value={quiz.description || ''} onChange={(e:any)=>setQuiz({...quiz, description: e.target.value})} />
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <NotchedInput label={'+1 History'} type="number" value={quiz.points_history} onChange={(e:any)=>setQuiz({...quiz, points_history: Number(e.target.value)})} />
-            <NotchedInput label={'+1 Future 1x2'} type="number" value={quiz.points_future_exact} onChange={(e:any)=>setQuiz({...quiz, points_future_exact: Number(e.target.value)})} />
-            <NotchedInput label={'+3 Score exact'} type="number" value={quiz.points_score_exact} onChange={(e:any)=>setQuiz({...quiz, points_score_exact: Number(e.target.value)})} />
-            <NotchedInput label={'+1 Score tendency'} type="number" value={quiz.points_score_tendency} onChange={(e:any)=>setQuiz({...quiz, points_score_tendency: Number(e.target.value)})} />
+        <CardHeader>
+          <CardTitle>Podstawowe informacje</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <NotchedInput borderless label={'Tytuł wiktoryny'} value={title} onChange={(e:any)=>setTitle(e.target.value)} />
+          <ImageUploader value={imageUrl} onChange={setImageUrl as any} />
+          <NotchedInput borderless type="number" label={'Nagroda (zł)'} value={String(prize ?? '')} onChange={(e:any)=>setPrize(e.target.value)} />
+          <NotchedInput borderless label={'Etykieta rundy (np. "14 kolejka")'} value={label} onChange={(e:any)=>setLabel(e.target.value)} />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <NotchedInput borderless type="datetime-local" label={'Start'} value={startsAt} onChange={(e:any)=>setStartsAt(e.target.value)} />
+            <NotchedInput borderless type="datetime-local" label={'Deadline'} value={deadlineAt} onChange={(e:any)=>setDeadlineAt(e.target.value)} />
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <NotchedInput label={'Label'} value={round.label} onChange={(e:any)=>setRound({...round, label: e.target.value})} />
-            <NotchedInput label={'Start'} type="datetime-local" value={(round.starts_at||'').slice(0,16)} onChange={(e:any)=>setRound({...round, starts_at: e.target.value})} />
-            <NotchedInput label={'Deadline'} type="datetime-local" value={(round.deadline_at||'').slice(0,16)} onChange={(e:any)=>setRound({...round, deadline_at: e.target.value})} />
+          <div className="text-sm text-muted-foreground">Liga: {round.leagues?.name || '—'} • Status: <span className="uppercase">{round.status}</span></div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Pytania</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {/* List */}
+          <div className="space-y-2">
+            {qLoading ? (
+              <div className="text-sm text-muted-foreground">Ładowanie…</div>
+            ) : qs.length === 0 ? (
+              <div className="text-sm text-muted-foreground">Brak pytań. Dodaj pierwsze pytanie poniżej.</div>
+            ) : (
+              qs.map((q:any, idx:number) => (
+                <div key={q.id} className="rounded-lg bg-muted/20">
+                  <div className="flex items-center justify-between px-3 py-2">
+                    <div className="text-sm">
+                      <div className="font-medium">#{idx+1} • {kindLabel(q.kind)}</div>
+                      <div className="opacity-80">{q.prompt}</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" variant="secondary" onClick={()=>moveQuestion(q.id, -1)} disabled={idx===0}>Góra</Button>
+                      <Button size="sm" variant="secondary" onClick={()=>moveQuestion(q.id, +1)} disabled={idx===qs.length-1}>Dół</Button>
+                      <Button size="sm" variant="outline" onClick={()=>startEdit(q)}>Edytuj</Button>
+                      <Button size="sm" variant="destructive" onClick={()=>removeQuestion(q.id)}>Usuń</Button>
+                    </div>
+                  </div>
+                  {editing === q.id && (
+                    <div className="border-t border-border/40 px-3 py-3 space-y-3">
+                      <NotchedInput borderless label={'Treść pytania'} value={editData.prompt || ''} onChange={(e:any)=>setEditData((d:any)=>({ ...d, prompt: e.target.value }))} />
+                      {(q.kind === 'future_1x2' || q.kind === 'future_score') && (
+                        <div>
+                          <Label>Mecz</Label>
+                          <select className="mt-1 w-full rounded-md bg-muted/20 px-3 py-2 border-0 ring-0 focus:outline-none" value={editData.match_id || ''} onChange={(e)=>setEditData((d:any)=>({ ...d, match_id: e.target.value || null }))}>
+                            <option value="">— wybierz mecz —</option>
+                            {matches.map((m:any)=> (
+                              <option key={m.id} value={m.id}>{m.home_team} vs {m.away_team} • {new Date(m.kickoff_at).toLocaleString('pl-PL')}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                      {q.kind === 'history_numeric' && (
+                        <div className="grid grid-cols-3 gap-3">
+                          <NotchedInput borderless type="number" label={'Min'} value={editData.min ?? 0} onChange={(e:any)=>setEditData((d:any)=>({ ...d, min: parseInt(e.target.value||'0') }))} />
+                          <NotchedInput borderless type="number" label={'Max'} value={editData.max ?? 6} onChange={(e:any)=>setEditData((d:any)=>({ ...d, max: parseInt(e.target.value||'0') }))} />
+                          <NotchedInput borderless type="number" label={'Krok'} value={editData.step ?? 1} onChange={(e:any)=>setEditData((d:any)=>({ ...d, step: parseInt(e.target.value||'1') }))} />
+                        </div>
+                      )}
+                      {q.kind === 'future_score' && (
+                        <div className="grid grid-cols-4 gap-3">
+                          <NotchedInput borderless type="number" label={'Min (gosp.)'} value={editData.min_home ?? 0} onChange={(e:any)=>setEditData((d:any)=>({ ...d, min_home: parseInt(e.target.value||'0') }))} />
+                          <NotchedInput borderless type="number" label={'Max (gosp.)'} value={editData.max_home ?? 10} onChange={(e:any)=>setEditData((d:any)=>({ ...d, max_home: parseInt(e.target.value||'0') }))} />
+                          <NotchedInput borderless type="number" label={'Min (goście)'} value={editData.min_away ?? 0} onChange={(e:any)=>setEditData((d:any)=>({ ...d, min_away: parseInt(e.target.value||'0') }))} />
+                          <NotchedInput borderless type="number" label={'Max (goście)'} value={editData.max_away ?? 10} onChange={(e:any)=>setEditData((d:any)=>({ ...d, max_away: parseInt(e.target.value||'0') }))} />
+                        </div>
+                      )}
+                      <div className="flex items-center justify-end gap-2">
+                        <Button variant="secondary" onClick={()=>setEditing(null)}>Anuluj</Button>
+                        <Button onClick={()=>saveEdit(q.id, q.kind)}>Zapisz</Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
           </div>
-          <div className="flex gap-2">
-            <Button onClick={saveBasics} disabled={saving}>Zapisz</Button>
-            <Button variant="secondary" onClick={()=>publish('published')}>Opublikuj</Button>
-            <Button variant="outline" onClick={()=>publish('locked')}>Zamknij</Button>
-            <Button variant="destructive" onClick={()=>publish('settled')}>Oznacz rozliczoną</Button>
-            <Button variant="ghost" onClick={recalc}>Przelicz wyniki</Button>
-          </div>
-          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Card className="p-4">
-              <div className="text-sm text-muted-foreground">Исторические вопросы</div>
-              <div className="text-2xl font-bold">{qCount}</div>
-              <Button className="mt-2" variant="secondary" onClick={genHistory3}>Авто‑создать 3</Button>
-            </Card>
-            <Card className="p-4">
-              <div className="text-sm text-muted-foreground">Матчей в туре</div>
-              <div className="text-2xl font-bold">{mCount}</div>
-              <Button className="mt-2" variant="secondary" onClick={genMatch1x2}>Сгенерировать 1X2 по матчам</Button>
-            </Card>
+
+          {/* Add form */}
+          <div className="rounded-xl border border-border/40 p-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <Label>Rodzaj pytania</Label>
+                <select className="mt-1 w-full rounded-md bg-muted/20 px-3 py-2 border-0 ring-0 focus:outline-none" value={qKind} onChange={(e)=>setQKind(e.target.value as any)}>
+                  <option value="history_single">Jednokrotny wybór</option>
+                  <option value="future_1x2">1X2 (przyszłość)</option>
+                  <option value="history_numeric">Wartość liczbowa</option>
+                  <option value="future_score">Dokładny wynik</option>
+                </select>
+              </div>
+              <div className="sm:col-span-2">
+                <NotchedInput borderless label={'Treść pytania'} value={qPrompt} onChange={(e:any)=>setQPrompt(e.target.value)} />
+              </div>
+            </div>
+
+            {(qKind === 'history_single' || qKind === 'future_1x2') && (
+              <div className="mt-3">
+                <Label>Opcje odpowiedzi</Label>
+                <div className="space-y-2 mt-1">
+                  {qOptions.map((opt, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <input value={opt} onChange={(e)=>updateOption(i, e.target.value)} className="flex-1 rounded-md bg-muted/20 px-3 py-2 border-0 ring-0 focus:outline-none" />
+                      <Button size="sm" variant="secondary" onClick={()=>removeOption(i)}>Usuń</Button>
+                    </div>
+                  ))}
+                </div>
+                <Button size="sm" className="mt-2" variant="outline" onClick={()=>setQOptions([...qOptions, ''])}>Dodaj opcję</Button>
+              </div>
+            )}
+
+            {(qKind === 'future_1x2' || qKind === 'future_score') && matches.length > 0 && (
+              <div className="mt-3">
+                <Label>Mecz (z rundy)</Label>
+                <select className="mt-1 w-full rounded-md bg-muted/20 px-3 py-2 border-0 ring-0 focus:outline-none" value={(editData as any).new_match_id || ''} onChange={(e)=>setEditData((d:any)=>({ ...d, new_match_id: e.target.value }))}>
+                  <option value="">— wybierz mecz —</option>
+                  {matches.map((m:any)=> (
+                    <option key={m.id} value={m.id}>{m.home_team} vs {m.away_team} • {new Date(m.kickoff_at).toLocaleString('pl-PL')}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <Button variant="secondary" onClick={resetNewQ}>Wyczyść</Button>
+              <Button onClick={()=>addQuestionWithMatch()} disabled={!qPrompt}>Dodaj pytanie</Button>
+            </div>
           </div>
         </CardContent>
       </Card>
     </div>
   )
+}
+
+function kindLabel(k: string) {
+  switch (k) {
+    case 'history_single': return 'Jednokrotny wybór'
+    case 'history_numeric': return 'Wartość liczbowa'
+    case 'future_1x2': return '1X2 (przyszłość)'
+    case 'future_score': return 'Dokładny wynik'
+    default: return k
+  }
 }
