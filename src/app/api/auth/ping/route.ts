@@ -9,11 +9,10 @@ export async function GET() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll: () => cookieStore.getAll().map((c) => ({ name: c.name, value: c.value })),
-      } as any,
+        get: (name: string) => cookieStore.get(name)?.value,
+      },
     }
   )
   const { data: { session } } = await supabase.auth.getSession()
   return NextResponse.json({ ok: !!session })
 }
-

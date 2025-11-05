@@ -1,0 +1,2 @@
+[functions.verify-phone-bird]
+verify_jwt = false

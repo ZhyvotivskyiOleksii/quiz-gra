@@ -11,7 +11,7 @@ import NotchedInput from '@/components/ui/notched-input'
 import PhoneInputField from '@/components/ui/phone-input'
 import { useToast } from '@/hooks/use-toast'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import { User, Phone, Lock, Hand, HelpCircle } from 'lucide-react'
+import { User, Phone, Lock, Hand, HelpCircle, BadgeCheck, AlertTriangle } from 'lucide-react'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 
@@ -41,6 +41,7 @@ function SettingsContent() {
 
   const { toast } = useToast()
   const [userEmail, setUserEmail] = React.useState<string>('')
+  const [contactEmail, setContactEmail] = React.useState<string>('')
   const [firstName, setFirstName] = React.useState<string>('')
   const [lastName, setLastName] = React.useState<string>('')
   const [displayName, setDisplayName] = React.useState<string>('')
@@ -60,6 +61,8 @@ function SettingsContent() {
         if (user) {
           const email = user.email ?? (user.user_metadata?.email as string | undefined) ?? ''
           setUserEmail(email)
+          const cemail = (user.user_metadata as any)?.contact_email as string | undefined
+          if (cemail) setContactEmail(cemail)
           const fn = (user.user_metadata?.first_name as string | undefined) || ''
           const ln = (user.user_metadata?.last_name as string | undefined) || ''
           setFirstName(fn); setLastName(ln)
@@ -90,7 +93,8 @@ function SettingsContent() {
       const supabase = getSupabase()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Brak sesji')
-      await supabase.auth.updateUser({ data: { first_name: firstName, last_name: lastName, avatar_url: avatarUrl || null } })
+      // Не меняем основное поле email (чтобы не запускать верификацию), сохраняем служебный контактный email в metadata
+      await supabase.auth.updateUser({ data: { first_name: firstName, last_name: lastName, avatar_url: avatarUrl || null, contact_email: contactEmail || null } })
       const iso = birthDate ? new Date(Date.UTC(birthDate.getFullYear(), birthDate.getMonth(), birthDate.getDate())).toISOString().slice(0,10) : null
       await supabase.from('profiles').upsert({ id: user.id, display_name: `${firstName} ${lastName}`.trim() || null, birth_date: iso, avatar_url: avatarUrl || null } as any, { onConflict: 'id' } as any)
       setEditing(false)
@@ -155,7 +159,7 @@ function SettingsContent() {
                   </div>
                   <div>
                     <div className="text-sm text-muted-foreground">E‑mail</div>
-                    <div className="text-lg font-semibold">{userEmail || '—'}</div>
+                    <div className="text-lg font-semibold">{userEmail || contactEmail || '—'}</div>
                   </div>
                   <div>
                     <div className="text-sm text-muted-foreground">Telefon</div>
@@ -171,10 +175,12 @@ function SettingsContent() {
                   firstName={firstName}
                   lastName={lastName}
                   email={userEmail}
+                  contactEmail={contactEmail}
                   birthDate={birthDate}
                   onFirstName={setFirstName}
                   onLastName={setLastName}
                   onBirthDate={setBirthDate}
+                  onContactEmail={setContactEmail}
                 />
               )}
 
@@ -227,17 +233,50 @@ function PhoneVerificationPanel() {
   const [phone, setPhone] = React.useState('')
   const [code, setCode] = React.useState('')
   const [loading, setLoading] = React.useState(false)
+  const [currentPhone, setCurrentPhone] = React.useState<string | null>(null)
+  const [confirmed, setConfirmed] = React.useState<boolean>(false)
+  const [conflictPhone, setConflictPhone] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const s = getSupabase()
+        const { data: { user } } = await s.auth.getUser()
+        if (user) {
+          const p = (user as any).phone || (user.user_metadata as any)?.phone || null
+          setCurrentPhone(p)
+          setConfirmed(Boolean((user as any).phone_confirmed_at))
+        }
+      } catch {}
+    })()
+  }, [])
+
+  // Отображаем телефон в формате как в БД (E.164: +цифры, без пробелов)
+  function prettyPhone(p?: string | null) {
+    if (!p) return ''
+    return (p.startsWith('+') ? p : `+${p}`).replace(/[^\d+]/g, '')
+  }
 
   async function sendCode() {
     setLoading(true)
     try {
       const supabase = getSupabase()
-      const { error } = await supabase.auth.updateUser({ phone: phone.startsWith('+') ? phone : `+${phone}` })
+      const norm = (phone.startsWith('+') ? phone : `+${phone}`).replace(/[^\d+]/g, '')
+      const { error } = await supabase.auth.updateUser({ phone: norm })
       if (error) throw error
       setStep('code')
+      setCurrentPhone(norm)
       toast({ title: 'Wysłaliśmy kod SMS.' })
     } catch (e: any) {
-      toast({ title: 'Błąd', description: e?.message || 'Nie udało się wysłać kodu', variant: 'destructive' as any })
+      const msg = String(e?.message || '').toLowerCase()
+      if (msg.includes('already been registered') || msg.includes('already registered') || /422/.test(String(e?.status))) {
+        const norm = (phone.startsWith('+') ? phone : `+${phone}`).replace(/[^\d+]/g, '')
+        setConflictPhone(norm)
+        setOpen(false) // сразу закрыть модалку
+        toast({ title: 'Ten numer jest już używany', description: 'Możesz zalogować się tym numerem i połączyć konta.', variant: 'destructive' as any })
+      } else {
+        toast({ title: 'Błąd', description: e?.message || 'Nie udało się wysłać kodu', variant: 'destructive' as any })
+      }
     } finally { setLoading(false) }
   }
 
@@ -245,15 +284,69 @@ function PhoneVerificationPanel() {
     setLoading(true)
     try {
       const supabase = getSupabase()
-      const { error } = await supabase.auth.verifyOtp({ phone: phone.startsWith('+') ? phone : `+${phone}` , token: code, type: 'phone_change' as any })
+      const norm = (phone.startsWith('+') ? phone : `+${phone}`).replace(/[^\d+]/g, '')
+      const { error } = await supabase.auth.verifyOtp({ phone: norm , token: code, type: 'phone_change' as any })
       if (error) throw error
       setOpen(false)
+      setConfirmed(true)
+      try { setCurrentPhone(norm) } catch {}
       toast({ title: 'Numer zweryfikowany' })
     } catch (e: any) {
       toast({ title: 'Nieprawidłowy kod', description: e?.message || 'Sprawdź kod i spróbuj ponownie', variant: 'destructive' as any })
     } finally { setLoading(false) }
   }
 
+  // В случае конфликта никаких попыток логина отсюда не делаем —
+  // предлагаем ввести другой номер или отменить.
+
+  // Success view if confirmed
+  if (confirmed && currentPhone) {
+    return (
+      <Card className="mt-2">
+        <CardContent className="p-6 sm:p-8">
+          <div className="mb-4 flex items-center gap-2">
+            <BadgeCheck className="h-5 w-5 text-emerald-500" />
+            <h2 className="text-xl font-headline font-extrabold uppercase text-emerald-600">Telefon zweryfikowany</h2>
+          </div>
+          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm">
+            <div className="font-semibold">{prettyPhone(currentPhone)}</div>
+            <div className="text-emerald-700 dark:text-emerald-300 mt-1">Wszystko gra — możesz w pełni korzystać z serwisu.</div>
+          </div>
+          <div className="mt-4">
+            <Dialog open={open} onOpenChange={setOpen}>
+              <DialogTrigger asChild>
+                <Button variant="secondary" className="h-10">Zmień numer</Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle className="text-2xl font-headline font-extrabold uppercase">Zmień numer telefonu</DialogTitle>
+                  <DialogDescription>Podaj nowy numer telefonu i potwierdź kodem z SMS.</DialogDescription>
+                </DialogHeader>
+                {step === 'phone' ? (
+                  <div className="space-y-4">
+                    <PhoneInputField id="settings-phone" label={'Nowy numer telefonu'} value={phone} onChange={setPhone} />
+                    <Button onClick={sendCode} disabled={loading || phone.length < 6} className="w-full h-10">
+                      {loading ? 'Wysyłanie…' : 'Wyślij kod'}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <NotchedInput type="text" inputMode="numeric" label={'Kod z SMS'} value={code} onChange={(e:any)=>setCode(e.target.value)} />
+                    <Button onClick={verify} disabled={loading || code.length === 0} className="w-full h-10">
+                      {loading ? 'Sprawdzanie…' : 'Potwierdź'}
+                    </Button>
+                    <button type="button" onClick={()=>setStep('phone')} className="text-sm text-primary hover:underline">Zmień numer telefonu</button>
+                  </div>
+                )}
+              </DialogContent>
+            </Dialog>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  // Default: prompt to verify + обработка конфликта номера на панели
   return (
     <Card className="mt-2">
       <CardContent className="p-6 sm:p-8">
@@ -261,11 +354,36 @@ function PhoneVerificationPanel() {
           <Phone className="h-5 w-5 text-muted-foreground" />
           <h2 className="text-xl font-headline font-extrabold uppercase">Weryfikacja numeru telefonu</h2>
         </div>
-        <p className="text-sm text-muted-foreground mb-4">Sprawdź, czy Twój numer jest poprawny. Wyślemy kod SMS do weryfikacji.</p>
+        {!conflictPhone ? (
+          <p className="text-sm text-muted-foreground mb-4">Sprawdź, czy Twój numer jest poprawny. Wyślemy kod SMS do weryfikacji.</p>
+        ) : (
+          <div className="mb-4">
+            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-200 flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 mt-0.5" />
+              <div>
+                <div className="font-semibold">Numer {conflictPhone} jest już przypisany do innego konta.</div>
+                <div className="opacity-90">Możesz zalogować się tym numerem i połączyć konta (w ustawieniach dodaj Google).</div>
+              </div>
+            </div>
+            <div className="mt-3 flex gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => { setConflictPhone(null); setStep('phone'); setPhone(''); setOpen(true) }}
+              >
+                Wprowadź inny numer
+              </Button>
+              <Button onClick={() => { setConflictPhone(null) }}>
+                Anuluj
+              </Button>
+            </div>
+          </div>
+        )}
         <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button className="h-10">Zweryfikuj telefon</Button>
-          </DialogTrigger>
+          {!conflictPhone && (
+            <DialogTrigger asChild>
+              <Button className="h-10">Zweryfikuj telefon</Button>
+            </DialogTrigger>
+          )}
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle className="text-2xl font-headline font-extrabold uppercase">Weryfikacja numeru telefonu</DialogTitle>
@@ -346,14 +464,16 @@ function AvatarUploadButton({ onUploaded }: { onUploaded: (url: string) => void 
   )
 }
 
-function AccountEditForm({ firstName, lastName, email, birthDate, onFirstName, onLastName, onBirthDate }: {
+function AccountEditForm({ firstName, lastName, email, contactEmail, birthDate, onFirstName, onLastName, onBirthDate, onContactEmail }: {
   firstName: string
   lastName: string
   email: string
+  contactEmail: string
   birthDate: Date | null
   onFirstName: (v: string) => void
   onLastName: (v: string) => void
   onBirthDate: (d: Date | null) => void
+  onContactEmail: (v: string) => void
 }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -383,7 +503,11 @@ function AccountEditForm({ firstName, lastName, email, birthDate, onFirstName, o
         </div>
       </div>
       <div className="space-y-3">
-        <NotchedInput label={'E‑mail'} value={email} disabled />
+        {email ? (
+          <NotchedInput label={'E‑mail'} value={email} disabled />
+        ) : (
+          <NotchedInput label={'E‑mail (opcjonalnie)'} value={contactEmail} onChange={(e:any)=>onContactEmail(e.target.value)} placeholder="np. jan@example.com" />
+        )}
       </div>
     </div>
   )

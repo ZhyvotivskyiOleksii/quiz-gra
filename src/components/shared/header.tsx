@@ -23,6 +23,7 @@ export function Header() {
   const [loginPrefill, setLoginPrefill] = React.useState<{ email?: string; password?: string; notice?: string }|null>(null);
   const isMobile = useIsMobile();
   const [userEmail, setUserEmail] = React.useState<string | undefined>(undefined)
+  const [hasSession, setHasSession] = React.useState(false)
   const [avatarUrl, setAvatarUrl] = React.useState<string | undefined>(undefined)
   const [isAdmin, setIsAdmin] = React.useState(false)
   const [displayName, setDisplayName] = React.useState<string | undefined>(undefined)
@@ -33,6 +34,7 @@ export function Header() {
       const supabase = getSupabase();
       const { data: { user }, error: userErr } = await supabase.auth.getUser();
       if (user && !userErr) {
+        setHasSession(true)
         setUserEmail(user.email ?? (user.user_metadata?.email as string | undefined))
         // 1) read avatar from auth metadata/provider
         let nextAvatar = (user.user_metadata?.avatar_url || user.user_metadata?.picture) as string | undefined
@@ -85,13 +87,14 @@ export function Header() {
       }
       // Keep server cookies in sync so RSC routes (/app) see the session
       const { data: sub } = supabase.auth.onAuthStateChange(async (evt, sess) => {
-        if ((evt === 'SIGNED_IN' || evt === 'TOKEN_REFRESHED') && sess) {
+        setHasSession(Boolean(sess?.user))
+        if (evt === 'SIGNED_IN' && sess?.access_token && (sess as any)?.refresh_token) {
           try {
             await fetch('/auth/callback', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               credentials: 'include',
-              body: JSON.stringify({ event: evt, session: sess }),
+              body: JSON.stringify({ event: evt, session: { access_token: (sess as any).access_token, refresh_token: (sess as any).refresh_token } }),
             })
           } catch {}
         }
@@ -142,16 +145,17 @@ export function Header() {
         router.replace(url.pathname + url.search + url.hash);
       } catch {}
     }
-  }, [searchParams, userEmail, pathname, router]);
+  }, [searchParams, hasSession, pathname, router]);
 
   const initials = React.useMemo(() => {
+    const base = (displayName || userEmail || '').trim()
     const e = userEmail || ''
-    const name = e.split('@')[0]
+    const name = base ? base.split('@')[0] : ''
     if (!name) return 'US'
     const first = name[0]?.toUpperCase() || 'U'
     const second = (name.split(/[\W_]+/)[1]?.[0] || e[0] || 'S').toUpperCase()
     return `${first}${second}`
-  }, [userEmail])
+  }, [userEmail, displayName])
 
   const handleLogout = async () => {
     const s = getSupabase();
@@ -174,8 +178,8 @@ export function Header() {
 
   // Если авторизовался — гарантированно закрыть модалку
   React.useEffect(() => {
-    if (userEmail && open) setOpen(false)
-  }, [userEmail, open])
+    if (hasSession && open) setOpen(false)
+  }, [hasSession, open])
 
   const handleRegisterSuccess = (prefill?: { email?: string; password?: string; notice?: string }) => {
     // Switch to login and prefill credentials, keep dialog open
@@ -196,7 +200,7 @@ export function Header() {
                 {shortId && <span className="text-xs text-muted-foreground">ID: {shortId}</span>}
               </div>
             )}
-            {userEmail ? (
+            {hasSession ? (
               // На маркетинговых страницах (главная и пр.) вместо меню — прямой вход в панель
               pathname && !pathname.startsWith('/app') && !pathname.startsWith('/admin') ? (
                 <Button

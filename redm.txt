@@ -74,3 +74,34 @@ ssh root@45.148.244.75 '
 потом 
 chmod +x deploy-quiz-time.sh
 ./deploy-quiz-time.sh
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+вот так сикрит мі обвновляли supabase secrets set \
+  SEND_SMS_HOOK_SECRETS="v1,whsec_5Y+rySpDVW5fSSoA3tU/VIHtavCCdHQY0NcdzyZyrzp4/NT4p1jrTFTLu0gPt4Oe6Z2fTFLrbCjkG475" \
+  SMS_ACCESS_KEY="AyRShCS4aCFMAzfz0T0LTjJil1k0G9sdqZWa" \
+  SMS_WORKSPACE_ID="66e4d909-c234-4bf3-9d44-88f299d9be9f" \
+  SMS_CHANNEL_ID="7687ae22-8c1f-5d7f-8d46-4a6a62740f9c" \
+  --project-ref usjnxyedapxkymlwicju  исразу послеетого делали вот так supabase functions deploy send-sms-bird --no-verify-jwt --project-ref usjnxyedapxkymlwicju проверяли вот так ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzam54eWVkYXB4a3ltbHdpY2p1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE2NTQ3ODgsImV4cCI6MjA3NzIzMDc4OH0.jmkGyOXAjDHiw-5ptVmqeelTb9WqTCZL2Rv7VeNgzo0'
+
+curl -i "https://usjnxyedapxkymlwicju.supabase.co/auth/v1/otp" \
+  -H "apikey: $ANON" \
+  -H "Content-Type: application/json" \
+  -d '{"phone":"+48572245574","type":"sms"}' 
