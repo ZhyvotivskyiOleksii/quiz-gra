@@ -93,10 +93,14 @@ function SettingsContent() {
       const supabase = getSupabase()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Brak sesji')
-      // Не меняем основное поле email (чтобы не запускать верификацию), сохраняем служебный контактный email в metadata
-      await supabase.auth.updateUser({ data: { first_name: firstName, last_name: lastName, avatar_url: avatarUrl || null, contact_email: contactEmail || null } })
+      // Если основного email нет — выставляем его из kontaktowego; иначе обновляем только метаданные
+      const needsPrimaryEmail = !user.email && (contactEmail?.trim())
+      await supabase.auth.updateUser({
+        email: needsPrimaryEmail ? contactEmail!.trim() : undefined,
+        data: { first_name: firstName, last_name: lastName, avatar_url: avatarUrl || null, contact_email: contactEmail || null },
+      })
       const iso = birthDate ? new Date(Date.UTC(birthDate.getFullYear(), birthDate.getMonth(), birthDate.getDate())).toISOString().slice(0,10) : null
-      await supabase.from('profiles').upsert({ id: user.id, display_name: `${firstName} ${lastName}`.trim() || null, birth_date: iso, avatar_url: avatarUrl || null } as any, { onConflict: 'id' } as any)
+      await supabase.from('profiles').upsert({ id: user.id, email: (needsPrimaryEmail ? contactEmail!.trim() : (user.email || null)), display_name: `${firstName} ${lastName}`.trim() || null, birth_date: iso, avatar_url: avatarUrl || null } as any, { onConflict: 'id' } as any)
       setEditing(false)
       toast({ title: 'Zapisano zmiany' })
     } catch (e: any) {

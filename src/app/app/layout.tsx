@@ -10,26 +10,14 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
   SidebarFooter,
-  SidebarTrigger,
   SidebarInset,
 } from '@/components/ui/sidebar';
-import { Play, History, LogOut, Bell, Settings as SettingsIcon, LayoutDashboard, Shield } from 'lucide-react';
-import { Logo } from '@/components/shared/logo';
+import { Play, History, LogOut, Settings as SettingsIcon, LayoutDashboard, Shield } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { getSupabase } from '@/lib/supabaseClient';
-import { ThemeSwitcher } from '@/components/shared/theme-switcher';
-import TopBar from '@/components/shared/topbar';
+import { Header } from '@/components/shared/header';
 // SidebarMenuBadge not needed; integrate badge inline within button
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -92,15 +80,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     return () => { sub.subscription.unsubscribe() }
   }, [])
 
-  const initials = React.useMemo(() => {
-    const e = userEmail || ''
-    const name = e.split('@')[0]
-    if (!name) return 'US'
-    const parts = name.replace(/[^a-zA-Z0-9]+/g, ' ').trim().split(' ')
-    const a = (parts[0]?.[0] || 'U').toUpperCase()
-    const b = (parts[1]?.[0] || e[0] || 'S').toUpperCase()
-    return `${a}${b}`
-  }, [userEmail])
+  // initials no longer used in this layout
 
   const menuItems = [
     { href: '/app', label: 'Panel', icon: LayoutDashboard },
@@ -130,11 +110,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <SidebarProvider>
+    <>
+      <Header />
+      <SidebarProvider>
       <Sidebar collapsible={isMobile ? 'offcanvas' : 'icon'} className="border-0">
-        <SidebarHeader className="px-4 py-5">
-          <Logo href="/" />
-        </SidebarHeader>
+        {/* Global header already contains the logo */}
+        <SidebarHeader className="px-2 py-2" />
         <SidebarContent className="px-2">
           <SidebarMenu className="gap-2">
             {menuItems.map((item) => (
@@ -204,67 +185,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </SidebarFooter>
       </Sidebar>
       <SidebarInset>
-        <TopBar>
-          <SidebarTrigger className="md:hidden" />
-          <div className="ml-auto flex items-center gap-2 md:gap-4">
-            {/* Header quick switch: Panel <-> SuperGame */}
-            <div className="hidden md:flex items-center rounded-full bg-muted/60 p-1">
-              <Button
-                size="sm"
-                variant={pathname === '/app' ? 'default' : 'ghost'}
-                className={pathname === '/app' ? 'h-10 px-4 rounded-full bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:from-indigo-700 hover:to-violet-700 shadow-md !bg-gradient-to-r !from-indigo-600 !to-violet-600 !text-white' : 'h-10 px-4 rounded-full'}
-                onClick={() => handleNavigate('/app')}
-              >
-                Panel
-              </Button>
-              <Button
-                size="sm"
-                variant={pathname?.startsWith('/app/play') ? 'default' : 'ghost'}
-                className={pathname?.startsWith('/app/play') ? 'h-10 px-4 rounded-full bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:from-indigo-700 hover:to-violet-700 shadow-md !bg-gradient-to-r !from-indigo-600 !to-violet-600 !text-white' : 'h-10 px-4 rounded-full'}
-                onClick={() => handleNavigate('/app/play')}
-              >
-                SuperGame
-              </Button>
-            </div>
-            <Button variant="ghost" size="icon" aria-label="Powiadomienia" className="rounded-full">
-              <Bell className="h-5 w-5" />
-            </Button>
-            <ThemeSwitcher />
-            {/* User info placed right next to avatar */}
-            {(displayName || shortId) && (
-              <div className="hidden sm:flex flex-col items-end mr-1 leading-tight">
-                {displayName && <span className="text-sm font-medium truncate max-w-[200px]">{displayName}</span>}
-                {shortId && <span className="text-xs text-muted-foreground">ID: {shortId}</span>}
-              </div>
-            )}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" className="overflow-hidden rounded-full">
-                  <Avatar>
-                    <AvatarImage data-ai-hint="person face" src={avatarUrl} alt="User" />
-                    <AvatarFallback>{initials}</AvatarFallback>
-                  </Avatar>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuLabel>Moje konto</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => handleNavigate(needsPhone ? '/app/settings?tab=phone' : '/app/settings')}>Ustawienia</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleNavigate('/app/history')}>Historia</DropdownMenuItem>
-                {isAdmin && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => handleNavigate('/admin')}>Admin panel</DropdownMenuItem>
-                  </>
-                )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleLogout}>Wyloguj</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </TopBar>
         <main className="flex-1 overflow-auto px-15 py-4 sm:py-6">{children}</main>
       </SidebarInset>
-    </SidebarProvider>
+      </SidebarProvider>
+    </>
   );
 }

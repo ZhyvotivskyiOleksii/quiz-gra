@@ -117,7 +117,9 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       // We have a session now; update profile fields
       if (pendingProfile) {
         const { error: updErr } = await supabase.auth.updateUser({
-          // Nie zmieniamy głównego pola email, aby nie uruchamiać weryfikacji mailowej
+          // Устанавливаем email как основной, чтобы можно было входить по паролю
+          // (если в проекте включено подтверждение email — Supabase отправит письмо)
+          email: pendingProfile.email || undefined,
           data: {
             first_name: pendingProfile.firstName,
             last_name: pendingProfile.lastName,
@@ -131,13 +133,14 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
           const { error: passErr } = await supabase.auth.updateUser({ password: pendingProfile.password })
           if (passErr) throw passErr
         }
-        // Ensure profile row exists and set display name. Short ID is generated on DB side.
+        // Ensure profile row exists and set display name + email. Short ID is generated on DB side.
         try {
           const { data: user } = await supabase.auth.getUser()
           if (user.user) {
             await supabase.from('profiles').upsert({
               id: user.user.id,
               display_name: `${pendingProfile.firstName} ${pendingProfile.lastName}`.trim() || null,
+              email: (pendingProfile.email || null),
             }, { onConflict: 'id' } as any)
           }
         } catch {}

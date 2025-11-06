@@ -10,19 +10,14 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
   SidebarFooter,
-  SidebarTrigger,
   SidebarInset,
 } from '@/components/ui/sidebar';
 import { LayoutDashboard, HelpCircle, Book, Users, FileClock, Settings, LogOut, ListChecks } from 'lucide-react';
-import { Logo } from '@/components/shared/logo';
+import { Header } from '@/components/shared/header';
 import { usePathname, useRouter } from 'next/navigation';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { getSupabase } from '@/lib/supabaseClient';
-import { ThemeSwitcher } from '@/components/shared/theme-switcher';
-import TopBar from '@/components/shared/topbar';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -107,11 +102,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const getActiveState = (itemHref: string) => (itemHref === '/admin' ? pathname === itemHref : pathname.startsWith(itemHref));
 
   return (
-    <SidebarProvider>
+    <>
+      <Header />
+      <SidebarProvider>
       <Sidebar collapsible={isMobile ? 'offcanvas' : 'icon'}>
-        <SidebarHeader>
-          <Logo />
-        </SidebarHeader>
+        <SidebarHeader />
         <SidebarContent>
           {/* Group header card like client panel */}
           <div className="mx-2 mb-2 rounded-2xl bg-white/5 dark:bg-white/5 border border-white/10 px-3 py-2 flex items-center justify-between">
@@ -169,38 +164,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </SidebarFooter>
       </Sidebar>
       <SidebarInset>
-        <TopBar>
-          <SidebarTrigger className="md:hidden" />
-          <div className="ml-auto flex items-center gap-2 md:gap-4">
-            <ThemeSwitcher />
-            {(displayName || shortId) && (
-              <div className="hidden sm:flex flex-col items-end mr-1 leading-tight">
-                {displayName && <span className="text-sm font-medium truncate max-w-[200px]">{displayName}</span>}
-                {shortId && <span className="text-xs text-muted-foreground">ID: {shortId}</span>}
-              </div>
-            )}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" className="overflow-hidden rounded-full">
-                  <Avatar>
-                    <AvatarImage data-ai-hint="person face" src={avatarUrl} alt="User" />
-                    <AvatarFallback>{initials}</AvatarFallback>
-                  </Avatar>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuLabel>Moje konto</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => handleNavigate('/app/settings')}>Ustawienia</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleNavigate('/app/history')}>Historia</DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleLogout}>Wyloguj</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </TopBar>
         <main className="flex-1 overflow-auto px-15 py-4 sm:py-6">{children}</main>
       </SidebarInset>
-    </SidebarProvider>
+      </SidebarProvider>
+    </>
   );
 }

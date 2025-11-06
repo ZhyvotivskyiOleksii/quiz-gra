@@ -2,7 +2,7 @@
 
 import { Logo } from '@/components/shared/logo';
 // No i18n now: Polish only
-import { User } from 'lucide-react';
+import { User, Settings as SettingsIcon, History as HistoryIcon, Shield, LogOut as LogOutIcon } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { LoginForm } from '../auth/login-form';
 import { RegisterForm } from '../auth/register-form';
@@ -35,24 +35,30 @@ export function Header() {
       const { data: { user }, error: userErr } = await supabase.auth.getUser();
       if (user && !userErr) {
         setHasSession(true)
-        setUserEmail(user.email ?? (user.user_metadata?.email as string | undefined))
+        setUserEmail(
+          (user.email as string | undefined)
+          || (user.user_metadata?.email as string | undefined)
+          || ((user.user_metadata as any)?.contact_email as string | undefined)
+        )
         // 1) read avatar from auth metadata/provider
         let nextAvatar = (user.user_metadata?.avatar_url || user.user_metadata?.picture) as string | undefined
         // 2) fallback to profiles.avatar_url (often updates first)
         try {
           const { data: profile } = await supabase
             .from('profiles')
-            .select('avatar_url, is_admin')
+            .select('avatar_url, display_name, email, is_admin')
             .eq('id', user.id)
             .maybeSingle()
           if (profile?.avatar_url) nextAvatar = profile.avatar_url as string
+          if (profile?.email && !user.email) setUserEmail(profile.email as any)
+          if (profile?.display_name) setDisplayName((profile.display_name as any))
           setIsAdmin(Boolean(profile?.is_admin))
         } catch {}
         // Name + short id
         const fn = (user.user_metadata?.first_name as string | undefined) || ''
         const ln = (user.user_metadata?.last_name as string | undefined) || ''
-        const dn = `${fn} ${ln}`.trim() || (user.email?.split('@')[0] ?? 'User')
-        setDisplayName(dn)
+        const dn = `${fn} ${ln}`.trim()
+        setDisplayName(dn || undefined)
         try {
           const { data: sid } = await supabase.rpc('get_or_create_short_id')
           if (sid) setShortId(String(sid))
@@ -100,21 +106,27 @@ export function Header() {
         }
         // Do not force navigation here; redirect is handled by forms and OAuth callback
         if (sess?.user) {
-          setUserEmail(sess.user.email ?? (sess.user.user_metadata?.email as string | undefined))
+          setUserEmail(
+            (sess.user.email as string | undefined)
+            || (sess.user.user_metadata?.email as string | undefined)
+            || ((sess.user.user_metadata as any)?.contact_email as string | undefined)
+          )
           let nextAvatar = (sess.user.user_metadata?.avatar_url || sess.user.user_metadata?.picture) as string | undefined
           try {
             const { data: profile } = await supabase
               .from('profiles')
-              .select('avatar_url, is_admin')
+              .select('avatar_url, display_name, email, is_admin')
               .eq('id', sess.user.id)
               .maybeSingle()
             if (profile?.avatar_url) nextAvatar = profile.avatar_url as string
+            if (profile?.email && !sess.user.email) setUserEmail(profile.email as any)
+            if (profile?.display_name) setDisplayName((profile.display_name as any))
             setIsAdmin(Boolean(profile?.is_admin))
           } catch {}
           const fn = (sess.user.user_metadata?.first_name as string | undefined) || ''
           const ln = (sess.user.user_metadata?.last_name as string | undefined) || ''
-          const dn = `${fn} ${ln}`.trim() || (sess.user.email?.split('@')[0] ?? 'User')
-          setDisplayName(dn)
+          const dn = `${fn} ${ln}`.trim()
+          setDisplayName(dn || undefined)
           try {
             const { data: sid } = await supabase.rpc('get_or_create_short_id')
             if (sid) setShortId(String(sid))
@@ -189,14 +201,18 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="flex h-16 items-center w-full max-w-[1440px] mx-auto px-[60px]">
+      <div className="flex h-16 items-center w-full px-[60px]">
         <Logo />
         <div className="flex flex-1 items-center justify-end space-x-4">
           <nav className="flex items-center space-x-2">
             {!isMobile && <ThemeSwitcher />}
-            {(displayName || shortId) && (
+            {(displayName || userEmail || shortId) && (
               <div className="hidden sm:flex flex-col items-end mr-1 leading-tight">
-                {displayName && <span className="text-sm font-medium truncate max-w-[200px]">{displayName}</span>}
+                {/* Первая строка: имя и фамилия, если есть; иначе e‑mail */}
+                <span className="text-sm font-medium truncate max-w-[220px]">
+                  {displayName ? displayName : (userEmail || '')}
+                </span>
+                {/* Вторая строка: всегда ID */}
                 {shortId && <span className="text-xs text-muted-foreground">ID: {shortId}</span>}
               </div>
             )}
@@ -232,21 +248,54 @@ export function Header() {
                       </Avatar>
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    {(displayName || shortId) && (
-                      <>
-                        <DropdownMenuLabel>Moje konto</DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                      </>
-                    )}
-                    <DropdownMenuItem onClick={() => router.push('/app/settings' as any)}>Ustawienia</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => router.push('/app/history' as any)}>Historia</DropdownMenuItem>
-                    {isAdmin && (<>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={() => router.push('/admin' as any)}>Admin panel</DropdownMenuItem>
-                    </>)}
+                  <DropdownMenuContent
+                    align="end"
+                    className="w-56 p-1.5 rounded-xl border border-border/40 bg-card/95 backdrop-blur-sm shadow-lg"
+                  >
+                    <DropdownMenuLabel className="px-3 py-2">
+                      <div className="text-sm font-semibold truncate">
+                        {displayName || userEmail || 'Moje konto'}
+                      </div>
+                      {shortId && (
+                        <div className="text-xs text-muted-foreground mt-0.5">ID: {shortId}</div>
+                      )}
+                    </DropdownMenuLabel>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={handleLogout}>Wyloguj</DropdownMenuItem>
+
+                    <DropdownMenuItem
+                      className="group flex items-center gap-2 rounded-md px-3 py-2 hover:bg-muted/60 focus:bg-muted/60"
+                      onClick={() => router.push('/app/settings' as any)}
+                    >
+                      <SettingsIcon className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+                      <span>Ustawienia</span>
+                    </DropdownMenuItem>
+
+                    <DropdownMenuItem
+                      className="group flex items-center gap-2 rounded-md px-3 py-2 hover:bg-muted/60 focus:bg-muted/60"
+                      onClick={() => router.push('/app/history' as any)}
+                    >
+                      <HistoryIcon className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+                      <span>Historia</span>
+                    </DropdownMenuItem>
+
+                    {isAdmin && (
+                      <DropdownMenuItem
+                        className="group flex items-center gap-2 rounded-md px-3 py-2 hover:bg-muted/60 focus:bg-muted/60"
+                        onClick={() => router.push('/admin' as any)}
+                      >
+                        <Shield className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+                        <span>Admin panel</span>
+                      </DropdownMenuItem>
+                    )}
+
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="group flex items-center gap-2 rounded-md px-3 py-2 hover:bg-destructive/10 focus:bg-destructive/10"
+                      onClick={handleLogout}
+                    >
+                      <LogOutIcon className="h-4 w-4 text-destructive" />
+                      <span className="text-foreground group-hover:text-destructive transition-colors">Wyloguj</span>
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               )

@@ -120,7 +120,11 @@ export function LoginForm({ onSuccess, onSwitchToRegister, initialEmail, initial
         }
         onSuccess?.()
       } catch (err: any) {
-        toast({ title: 'Błędny email lub hasło', description: err?.message ?? '', variant: 'destructive' as any })
+        const msg = typeof err?.message === 'string' ? err.message : ''
+        const hint = /invalid login credentials/i.test(msg)
+          ? 'Jeśli rejestrowałeś się przez telefon, e‑mail mógł nie być ustawiony jako główny. Spróbuj „Telefon” lub zresetuj hasło.'
+          : msg
+        toast({ title: 'Błędny email lub hasło', description: hint, variant: 'destructive' as any })
       } finally {
         setIsLoading(false)
       }
@@ -276,10 +280,10 @@ export function LoginForm({ onSuccess, onSwitchToRegister, initialEmail, initial
                   autoComplete="email"
                   {...field}
                   error={!!fieldState.error}
-                  label={'Email'}
+                  label={<span>Email{fieldState.error ? <span className="ml-2 text-destructive text-xs font-semibold">– {fieldState.error.message || 'wymagany'}</span> : null}</span>}
                 />
               </FormControl>
-              <FormMessage />
+              {/* сообщение у метки, снизу не показываем */}
             </FormItem>
           )}
         />
@@ -294,7 +298,7 @@ export function LoginForm({ onSuccess, onSwitchToRegister, initialEmail, initial
                   autoComplete="current-password"
                   {...field}
                   error={!!fieldState.error}
-                  label={'Hasło'}
+                  label={<span>Hasło{fieldState.error ? <span className="ml-2 text-destructive text-xs font-semibold">– {fieldState.error.message || 'wymagane'}</span> : null}</span>}
                   rightAdornment={
                     <Button
                       type="button"
@@ -309,7 +313,7 @@ export function LoginForm({ onSuccess, onSwitchToRegister, initialEmail, initial
                   }
                 />
               </FormControl>
-              {fieldState.error && <FormMessage />}
+              {/* сообщение у метки, снизу не показываем */}
             </FormItem>
           )}
         />

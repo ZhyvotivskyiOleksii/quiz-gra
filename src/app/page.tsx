@@ -36,17 +36,25 @@ export default function Home() {
   return (
     <>
       <section className="relative w-full min-h-[72vh] flex items-center overflow-hidden">
-        {/* Dark theme background image + vignette; keep light clean */}
-        <div className="pointer-events-none absolute inset-0 z-0 opacity-30 mix-blend-overlay hidden dark:block">
-          <Image src="/images/preview.webp" alt="Background preview" fill priority className="object-cover" />
+        {/* Фон: героиня справа как декоративное изображение */}
+        <div className="pointer-events-none absolute inset-y-0 right-0 z-0 w-[46vw] md:w-[40vw] lg:w-[36vw] md:translate-x-[-2vw] lg:translate-x-[-3vw]">
+          <div className="relative h-full w-full">
+            <Image
+              src="/images/hero-img.svg"
+              alt=""
+              fill
+              priority
+              sizes="(min-width: 1024px) 40vw, 55vw"
+              className="object-contain object-right-bottom"
+            />
+          </div>
         </div>
-        <div className="absolute inset-0 z-0 hidden dark:block bg-gradient-to-b from-black/70 via-black/60 to-black/80" />
 
         <div className="relative z-10 w-full max-w-[1440px] mx-auto px-15 py-10 md:py-14 animate-fade-in-up text-foreground">
           {/* Top swipeable banners - sportsbook style */}
           <HeroBanners />
 
-          <div className="grid grid-cols-1 md:grid-cols-12 items-start gap-8 mt-8 md:mt-12">
+          <div className="grid grid-cols-1 md:grid-cols-12 items-start gap-8 mt-8 md:mt-12 relative z-10">
             <div className="text-left md:col-span-8">
               <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-primary text-xs tracking-wide">
                 <Zap className="w-3.5 h-3.5" />
@@ -75,11 +83,12 @@ export default function Home() {
                 )}
               </div>
             </div>
+            {/* Пустая колонка для баланса сетки на больших экранах */}
             <div aria-hidden className="hidden md:block md:col-span-4" />
           </div>
         </div>
-        {/* Smooth fade to next section */}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 md:h-28 bg-gradient-to-b from-transparent to-[hsl(var(--background))]" />
+        {/* Мягкий туман снизу для плавного перехода */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-28 md:h-40 bg-gradient-to-b from-transparent to-[hsl(var(--background))]" />
       </section>
 
       <section id="features" className="w-full py-12 md:py-24 lg:py-32 bg-background">
@@ -183,7 +192,7 @@ function HeroBanners() {
         {slides.map(({ id, badge, title, subtitle, image, icon: Icon }) => (
           <CarouselItem key={id} className="md:basis-[60%] lg:basis-1/3">
             {/* Real banner: image background without red tint */}
-            <div className="relative h-[160px] md:h-[180px] lg:h-[200px] overflow-hidden rounded-2xl shadow-lg">
+            <div className="relative h-[140px] md:h-[160px] lg:h-[180px] overflow-hidden rounded-2xl shadow-lg">
               <Image src={image} alt={title} fill className="object-cover" sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw" />
               {/* Only dark vignette for readability */}
               <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-black/5" />
