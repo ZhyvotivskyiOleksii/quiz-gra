@@ -114,34 +114,24 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       const supabase = getSupabase();
       const { data, error } = await supabase.auth.verifyOtp({ phone: pendingPhone.replace(/[^\d+]/g, ''), token: otpCode, type: 'sms' })
       if (error) throw error
-      // We have a session now; update profile fields
+      // We have a session now; securely link email/password so it appears in Auth → Users
       if (pendingProfile) {
-        const { error: updErr } = await supabase.auth.updateUser({
-          // Устанавливаем email как основной, чтобы можно было входить по паролю
-          // (если в проекте включено подтверждение email — Supabase отправит письмо)
-          email: pendingProfile.email || undefined,
-          data: {
-            first_name: pendingProfile.firstName,
-            last_name: pendingProfile.lastName,
-            marketing_consent: form.getValues('marketingConsent') ?? false,
-            contact_email: pendingProfile.email,
-          },
-        })
-        if (updErr) throw updErr
-
-        if (pendingProfile.password) {
-          const { error: passErr } = await supabase.auth.updateUser({ password: pendingProfile.password })
-          if (passErr) throw passErr
-        }
-        // Ensure profile row exists and set display name + email. Short ID is generated on DB side.
         try {
-          const { data: user } = await supabase.auth.getUser()
-          if (user.user) {
-            await supabase.from('profiles').upsert({
-              id: user.user.id,
-              display_name: `${pendingProfile.firstName} ${pendingProfile.lastName}`.trim() || null,
-              email: (pendingProfile.email || null),
-            }, { onConflict: 'id' } as any)
+          const resp = await fetch('/api/auth/link-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+              email: pendingProfile.email,
+              password: pendingProfile.password,
+              firstName: pendingProfile.firstName,
+              lastName: pendingProfile.lastName,
+              marketingConsent: form.getValues('marketingConsent') ?? false,
+            }),
+          })
+          if (!resp.ok) {
+            const j = await resp.json().catch(() => ({}))
+            throw new Error(j?.error || 'Link email failed')
           }
         } catch {}
       }

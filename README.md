@@ -18,6 +18,8 @@ Create `.env.local` (or update `.env`) with:
 ```
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
+# Optional but recommended: lets the server link email to phone users immediately
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 ```
 
 ## Install deps
@@ -27,6 +29,5 @@ npm i @supabase/supabase-js
 ```
 
 ## Usage
-- Registration stores the phone in user metadata.
-- Login → choose “Telefon” to use SMS OTP (Supabase + Bird/MessageBird).
-  Email is stored in user metadata `contact_email` and mirrored into `public.profiles` via trigger, so no email verification is required.
+- Registration uses phone OTP. After verifying the SMS code we call a server route to link the provided email/password to the same Auth user. If `SUPABASE_SERVICE_ROLE_KEY` is set, the email is applied immediately (and appears in Auth → Users). Without it, we fall back to a normal `updateUser` that may require email confirmation depending on your project settings.
+- Login → choose “Telefon” for SMS OTP or use email/password after registration.
