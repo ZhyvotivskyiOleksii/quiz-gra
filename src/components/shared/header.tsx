@@ -94,13 +94,24 @@ export function Header() {
       // Keep server cookies in sync so RSC routes (/app) see the session
       const { data: sub } = supabase.auth.onAuthStateChange(async (evt, sess) => {
         setHasSession(Boolean(sess?.user))
-        if (evt === 'SIGNED_IN' && sess?.access_token && (sess as any)?.refresh_token) {
+        const shouldSync =
+          (!!sess?.user && evt === 'INITIAL_SESSION') ||
+          evt === 'SIGNED_IN' ||
+          evt === 'TOKEN_REFRESHED' ||
+          evt === 'USER_UPDATED'
+        if (shouldSync && sess?.access_token && (sess as any)?.refresh_token) {
           try {
             await fetch('/auth/callback', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               credentials: 'include',
-              body: JSON.stringify({ event: evt, session: { access_token: (sess as any).access_token, refresh_token: (sess as any).refresh_token } }),
+              body: JSON.stringify({
+                event: evt,
+                session: {
+                  access_token: (sess as any).access_token,
+                  refresh_token: (sess as any).refresh_token,
+                },
+              }),
             })
           } catch {}
         }
@@ -200,10 +211,14 @@ export function Header() {
   }
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="flex h-16 items-center w-full px-[60px]">
-        <Logo />
-        <div className="flex flex-1 items-center justify-end space-x-4">
+    <header
+      className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
+      suppressHydrationWarning
+    >
+      <div className="w-full px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16">
+        <div className="mx-auto w-full max-w-screen-2xl flex h-16 items-center">
+          <Logo />
+          <div className="flex flex-1 items-center justify-end space-x-4">
           <nav className="flex items-center space-x-2">
             {!isMobile && <ThemeSwitcher />}
             {(displayName || userEmail || shortId) && (
@@ -250,12 +265,15 @@ export function Header() {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent
                     align="end"
-                    className="w-56 p-1.5 rounded-xl border border-border/40 bg-card/95 backdrop-blur-sm shadow-lg"
+                    className="w-64 p-1.5 rounded-xl border border-border/40 bg-card/95 backdrop-blur-sm shadow-lg"
                   >
-                    <DropdownMenuLabel className="px-3 py-2">
+                    <DropdownMenuLabel className="px-3 py-3 text-center">
                       <div className="text-sm font-semibold truncate">
-                        {displayName || userEmail || 'Moje konto'}
+                        {displayName || 'Moje konto'}
                       </div>
+                      {userEmail && (
+                        <div className="text-xs text-muted-foreground truncate mt-0.5">{userEmail}</div>
+                      )}
                       {shortId && (
                         <div className="text-xs text-muted-foreground mt-0.5">ID: {shortId}</div>
                       )}
@@ -289,13 +307,15 @@ export function Header() {
                     )}
 
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      className="group flex items-center gap-2 rounded-md px-3 py-2 hover:bg-destructive/10 focus:bg-destructive/10"
-                      onClick={handleLogout}
-                    >
-                      <LogOutIcon className="h-4 w-4 text-destructive" />
-                      <span className="text-foreground group-hover:text-destructive transition-colors">Wyloguj</span>
-                    </DropdownMenuItem>
+                    <div className="px-2 pb-1.5">
+                      <Button
+                        variant="destructive"
+                        className="w-full h-10 text-[13px] font-extrabold tracking-wide"
+                        onClick={handleLogout}
+                      >
+                        <LogOutIcon className="h-4 w-4 mr-2" /> Wyloguj
+                      </Button>
+                    </div>
                   </DropdownMenuContent>
                 </DropdownMenu>
               )
@@ -347,6 +367,7 @@ export function Header() {
             </Dialog>
             )}
           </nav>
+          </div>
         </div>
       </div>
     </header>

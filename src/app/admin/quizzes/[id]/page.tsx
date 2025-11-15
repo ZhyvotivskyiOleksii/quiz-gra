@@ -5,6 +5,7 @@ import { getSupabase } from '@/lib/supabaseClient'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import NotchedInput from '@/components/ui/notched-input'
+import { DateTimeField } from '@/components/ui/datetime-field'
 import { useToast } from '@/hooks/use-toast'
 import { Label } from '@/components/ui/label'
 import ImageUploader from '@/components/admin/image-uploader'
@@ -37,6 +38,7 @@ export default function AdminQuizDetailsPage() {
   const [matches, setMatches] = React.useState<any[]>([])
   const [editing, setEditing] = React.useState<string | null>(null)
   const [editData, setEditData] = React.useState<any>({})
+  const [showAddForm, setShowAddForm] = React.useState(false)
 
   async function load() {
     const s = getSupabase()
@@ -66,7 +68,7 @@ export default function AdminQuizDetailsPage() {
       const s = getSupabase()
       const { data } = await s
         .from('quiz_questions')
-        .select('id,kind,prompt,options,order_index')
+        .select('id,kind,prompt,options,order_index,match_id,correct')
         .eq('quiz_id', id)
         .order('order_index', { ascending: true })
       setQs(data || [])
@@ -116,6 +118,19 @@ export default function AdminQuizDetailsPage() {
 
   async function togglePublish() {
     if (!round) return
+    // Przy publikacji sprawdzamy, czy quiz ma co najmniej 3 pytania historyczne i 3 przyszłościowe
+    if (round.status !== 'published') {
+      const historyCount = qs.filter((q:any) => q.kind?.startsWith('history_')).length
+      const futureCount = qs.filter((q:any) => q.kind?.startsWith('future_')).length
+      if (historyCount < 3 || futureCount < 3) {
+        toast({
+          title: 'Za mało pytań w quizie',
+          description: 'Dodaj co najmniej 3 pytania historyczne i 3 pytania dotyczące przyszłości przed publikacją.',
+          variant: 'destructive' as any,
+        })
+        return
+      }
+    }
     setSaving(true)
     try {
       const s = getSupabase()
@@ -223,6 +238,13 @@ export default function AdminQuizDetailsPage() {
       def.min_away = q.options?.min_away ?? 0
       def.max_away = q.options?.max_away ?? 10
     }
+    if (q.kind === 'future_1x2') {
+      def.correct_choice = (q.correct as any) ?? ''
+    }
+    if (q.kind === 'future_score' && q.correct) {
+      def.correct_home = (q.correct as any).home ?? ''
+      def.correct_away = (q.correct as any).away ?? ''
+    }
     setEditData(def)
   }
 
@@ -233,6 +255,17 @@ export default function AdminQuizDetailsPage() {
       if (kind === 'future_1x2' || kind === 'future_score') upd.match_id = editData.match_id || null
       if (kind === 'history_numeric') upd.options = { min: Number(editData.min ?? 0), max: Number(editData.max ?? 6), step: Number(editData.step ?? 1) }
       if (kind === 'future_score') upd.options = { min_home: Number(editData.min_home ?? 0), max_home: Number(editData.max_home ?? 10), min_away: Number(editData.min_away ?? 0), max_away: Number(editData.max_away ?? 10) }
+      if (kind === 'future_1x2') {
+        upd.correct = editData.correct_choice || null
+      }
+      if (kind === 'future_score') {
+        if (editData.correct_home !== undefined && editData.correct_away !== undefined) {
+          upd.correct = {
+            home: Number(editData.correct_home ?? 0),
+            away: Number(editData.correct_away ?? 0),
+          }
+        }
+      }
       const { error } = await s.from('quiz_questions').update(upd).eq('id', idQ)
       if (error) throw error
       setEditing(null)
@@ -325,8 +358,8 @@ export default function AdminQuizDetailsPage() {
           <NotchedInput borderless type="number" label={'Nagroda (zł)'} value={String(prize ?? '')} onChange={(e:any)=>setPrize(e.target.value)} />
           <NotchedInput borderless label={'Etykieta rundy (np. "14 kolejka")'} value={label} onChange={(e:any)=>setLabel(e.target.value)} />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <NotchedInput borderless type="datetime-local" label={'Start'} value={startsAt} onChange={(e:any)=>setStartsAt(e.target.value)} />
-            <NotchedInput borderless type="datetime-local" label={'Deadline'} value={deadlineAt} onChange={(e:any)=>setDeadlineAt(e.target.value)} />
+            <DateTimeField label={'Start'} value={startsAt} onChange={setStartsAt} />
+            <DateTimeField label={'Deadline'} value={deadlineAt} onChange={setDeadlineAt} />
           </div>
           <div className="text-sm text-muted-foreground">Liga: {round.leagues?.name || '—'} • Status: <span className="uppercase">{round.status}</span></div>
         </CardContent>
@@ -334,7 +367,32 @@ export default function AdminQuizDetailsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Pytania</CardTitle>
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <CardTitle>Pytania</CardTitle>
+              <div className="mt-1 text-sm text-muted-foreground">
+                <span>
+                  Historyczne:{' '}
+                  <span className={qs.filter((q:any)=>q.kind?.startsWith('history_')).length >= 3 ? 'text-emerald-400' : 'text-amber-400'}>
+                    {qs.filter((q:any)=>q.kind?.startsWith('history_')).length}/3
+                  </span>
+                </span>
+                <span className="ml-4">
+                  Przyszłościowe:{' '}
+                  <span className={qs.filter((q:any)=>q.kind?.startsWith('future_')).length >= 3 ? 'text-emerald-400' : 'text-amber-400'}>
+                    {qs.filter((q:any)=>q.kind?.startsWith('future_')).length}/3
+                  </span>
+                </span>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={()=>setShowAddForm((v)=>!v)}
+            >
+              {showAddForm ? 'Ukryj formularz' : 'Dodaj pytanie ręcznie'}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-5">
           {/* List */}
@@ -350,6 +408,15 @@ export default function AdminQuizDetailsPage() {
                     <div className="text-sm">
                       <div className="font-medium">#{idx+1} • {kindLabel(q.kind)}</div>
                       <div className="opacity-80">{q.prompt}</div>
+                      {q.kind?.startsWith('future_') && (
+                        <div className="mt-0.5 text-xs text-muted-foreground">
+                          {q.correct
+                            ? q.kind === 'future_score'
+                              ? <>Poprawna odpowiedź: {(q.correct as any).home}:{(q.correct as any).away}</>
+                              : <>Poprawna odpowiedź: {(q.correct as any)}</>
+                            : <>Poprawna odpowiedź: <span className="italic">nie ustawiono</span></>}
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       <Button size="sm" variant="secondary" onClick={()=>moveQuestion(q.id, -1)} disabled={idx===0}>Góra</Button>
@@ -387,6 +454,44 @@ export default function AdminQuizDetailsPage() {
                           <NotchedInput borderless type="number" label={'Max (goście)'} value={editData.max_away ?? 10} onChange={(e:any)=>setEditData((d:any)=>({ ...d, max_away: parseInt(e.target.value||'0') }))} />
                         </div>
                       )}
+                      {q.kind === 'future_1x2' && (
+                        <div>
+                          <Label>Poprawna odpowiedź (po meczu)</Label>
+                          <div className="mt-1 flex gap-3 text-sm">
+                            {['1','X','2'].map((val) => (
+                              <label key={val} className="inline-flex items-center gap-1 cursor-pointer">
+                                <input
+                                  type="radio"
+                                  name={`correct-${q.id}`}
+                                  value={val}
+                                  checked={editData.correct_choice === val}
+                                  onChange={(e)=>setEditData((d:any)=>({ ...d, correct_choice: e.target.value }))}
+                                  className="h-3 w-3"
+                                />
+                                <span>{val}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {q.kind === 'future_score' && (
+                        <div className="grid grid-cols-2 gap-3">
+                          <NotchedInput
+                            borderless
+                            type="number"
+                            label={'Poprawny wynik — gospodarze'}
+                            value={editData.correct_home ?? ''}
+                            onChange={(e:any)=>setEditData((d:any)=>({ ...d, correct_home: e.target.value }))}
+                          />
+                          <NotchedInput
+                            borderless
+                            type="number"
+                            label={'Poprawny wynik — goście'}
+                            value={editData.correct_away ?? ''}
+                            onChange={(e:any)=>setEditData((d:any)=>({ ...d, correct_away: e.target.value }))}
+                          />
+                        </div>
+                      )}
                       <div className="flex items-center justify-end gap-2">
                         <Button variant="secondary" onClick={()=>setEditing(null)}>Anuluj</Button>
                         <Button onClick={()=>saveEdit(q.id, q.kind)}>Zapisz</Button>
@@ -398,55 +503,57 @@ export default function AdminQuizDetailsPage() {
             )}
           </div>
 
-          {/* Add form */}
-          <div className="rounded-xl border border-border/40 p-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <Label>Rodzaj pytania</Label>
-                <select className="mt-1 w-full rounded-md bg-muted/20 px-3 py-2 border-0 ring-0 focus:outline-none" value={qKind} onChange={(e)=>setQKind(e.target.value as any)}>
-                  <option value="history_single">Jednokrotny wybór</option>
-                  <option value="future_1x2">1X2 (przyszłość)</option>
-                  <option value="history_numeric">Wartość liczbowa</option>
-                  <option value="future_score">Dokładny wynik</option>
-                </select>
-              </div>
-              <div className="sm:col-span-2">
-                <NotchedInput borderless label={'Treść pytania'} value={qPrompt} onChange={(e:any)=>setQPrompt(e.target.value)} />
-              </div>
-            </div>
-
-            {(qKind === 'history_single' || qKind === 'future_1x2') && (
-              <div className="mt-3">
-                <Label>Opcje odpowiedzi</Label>
-                <div className="space-y-2 mt-1">
-                  {qOptions.map((opt, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <input value={opt} onChange={(e)=>updateOption(i, e.target.value)} className="flex-1 rounded-md bg-muted/20 px-3 py-2 border-0 ring-0 focus:outline-none" />
-                      <Button size="sm" variant="secondary" onClick={()=>removeOption(i)}>Usuń</Button>
-                    </div>
-                  ))}
+          {/* Add form (opcjonalnie, po kliknięciu przycisku) */}
+          {showAddForm && (
+            <div className="rounded-xl border border-border/40 p-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <Label>Rodzaj pytania</Label>
+                  <select className="mt-1 w-full rounded-md bg-muted/20 px-3 py-2 border-0 ring-0 focus:outline-none" value={qKind} onChange={(e)=>setQKind(e.target.value as any)}>
+                    <option value="history_single">Jednokrotny wybór</option>
+                    <option value="future_1x2">1X2 (przyszłość)</option>
+                    <option value="history_numeric">Wartość liczbowa</option>
+                    <option value="future_score">Dokładny wynik</option>
+                  </select>
                 </div>
-                <Button size="sm" className="mt-2" variant="outline" onClick={()=>setQOptions([...qOptions, ''])}>Dodaj opcję</Button>
+                <div className="sm:col-span-2">
+                  <NotchedInput borderless label={'Treść pytania'} value={qPrompt} onChange={(e:any)=>setQPrompt(e.target.value)} />
+                </div>
               </div>
-            )}
 
-            {(qKind === 'future_1x2' || qKind === 'future_score') && matches.length > 0 && (
-              <div className="mt-3">
-                <Label>Mecz (z rundy)</Label>
-                <select className="mt-1 w-full rounded-md bg-muted/20 px-3 py-2 border-0 ring-0 focus:outline-none" value={(editData as any).new_match_id || ''} onChange={(e)=>setEditData((d:any)=>({ ...d, new_match_id: e.target.value }))}>
-                  <option value="">— wybierz mecz —</option>
-                  {matches.map((m:any)=> (
-                    <option key={m.id} value={m.id}>{m.home_team} vs {m.away_team} • {new Date(m.kickoff_at).toLocaleString('pl-PL')}</option>
-                  ))}
-                </select>
+              {(qKind === 'history_single' || qKind === 'future_1x2') && (
+                <div className="mt-3">
+                  <Label>Opcje odpowiedzi</Label>
+                  <div className="space-y-2 mt-1">
+                    {qOptions.map((opt, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <input value={opt} onChange={(e)=>updateOption(i, e.target.value)} className="flex-1 rounded-md bg-muted/20 px-3 py-2 border-0 ring-0 focus:outline-none" />
+                        <Button size="sm" variant="secondary" onClick={()=>removeOption(i)}>Usuń</Button>
+                      </div>
+                    ))}
+                  </div>
+                  <Button size="sm" className="mt-2" variant="outline" onClick={()=>setQOptions([...qOptions, ''])}>Dodaj opcję</Button>
+                </div>
+              )}
+
+              {(qKind === 'future_1x2' || qKind === 'future_score') && matches.length > 0 && (
+                <div className="mt-3">
+                  <Label>Mecz (z rundy)</Label>
+                  <select className="mt-1 w-full rounded-md bg-muted/20 px-3 py-2 border-0 ring-0 focus:outline-none" value={(editData as any).new_match_id || ''} onChange={(e)=>setEditData((d:any)=>({ ...d, new_match_id: e.target.value }))}>
+                    <option value="">— wybierz mecz —</option>
+                    {matches.map((m:any)=> (
+                      <option key={m.id} value={m.id}>{m.home_team} vs {m.away_team} • {new Date(m.kickoff_at).toLocaleString('pl-PL')}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="mt-4 flex items-center justify-end gap-2">
+                <Button variant="secondary" onClick={resetNewQ}>Wyczyść</Button>
+                <Button onClick={()=>addQuestionWithMatch()} disabled={!qPrompt}>Dodaj pytanie</Button>
               </div>
-            )}
-
-            <div className="mt-4 flex items-center justify-end gap-2">
-              <Button variant="secondary" onClick={resetNewQ}>Wyczyść</Button>
-              <Button onClick={()=>addQuestionWithMatch()} disabled={!qPrompt}>Dodaj pytanie</Button>
             </div>
-          </div>
+          )}
         </CardContent>
       </Card>
     </div>

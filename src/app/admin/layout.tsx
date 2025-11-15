@@ -9,7 +9,6 @@ import {
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
-  SidebarFooter,
   SidebarInset,
 } from '@/components/ui/sidebar';
 import { LayoutDashboard, HelpCircle, Book, Users, FileClock, Settings, LogOut, ListChecks } from 'lucide-react';
@@ -103,13 +102,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <>
-      <Header />
+      <React.Suspense fallback={null}>
+        <Header />
+      </React.Suspense>
       <SidebarProvider>
       <Sidebar collapsible={isMobile ? 'offcanvas' : 'icon'}>
         <SidebarHeader />
-        <SidebarContent>
+        <SidebarContent className="pt-20 pb-4 flex flex-col">
           {/* Group header card like client panel */}
-          <div className="mx-2 mb-2 rounded-2xl bg-white/5 dark:bg-white/5 border border-white/10 px-3 py-2 flex items-center justify-between">
+          <div className="mx-2 mb-2 rounded-2xl bg-card text-card-foreground border border-border shadow-sm px-3 py-2 flex items-center justify-between">
             <button
               type="button"
               onClick={() => handleNavigate('/admin')}
@@ -122,7 +123,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
 
           {/* Bubble style nav items inside a soft card */}
-          <div className="mx-2 rounded-2xl bg-white/[0.04] border border-white/10 p-2">
+          <div className="mx-2 rounded-2xl bg-card border border-border shadow-sm p-2 flex flex-col flex-1">
             <SidebarMenu>
               {menuItems.map((item) => (
                 <SidebarMenuItem key={item.href}>
@@ -140,31 +141,42 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 </SidebarMenuItem>
               ))}
             </SidebarMenu>
+            <SidebarMenu className="mt-auto pt-4 pb-[60px]">
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  onClick={() => handleNavigate('/app')}
+                  isActive={pathname?.startsWith('/app')}
+                  variant="bubble"
+                  size="lg"
+                  className="justify-start text-foreground/85 hover:text-red-500"
+                  tooltip={{ children: 'Panel', side: 'right', align: 'center' }}
+                >
+                  <LayoutDashboard className="h-4 w-4" />
+                  <span>Panel</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  onClick={handleLogout}
+                  variant="bubble"
+                  size="lg"
+                  className="justify-start text-foreground/85 hover:text-red-500"
+                  tooltip={{ children: 'Wyloguj', side: 'right', align: 'center' }}
+                >
+                  <LogOut className="h-4 w-4" />
+                  <span>Wyloguj</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
           </div>
         </SidebarContent>
-        <SidebarFooter>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                onClick={() => handleNavigate('/app')}
-                isActive={pathname?.startsWith('/app')}
-                tooltip={{ children: 'Panel', side: 'right', align: 'center' }}
-              >
-                <LayoutDashboard />
-                <span>Panel</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton onClick={handleLogout} tooltip={{ children: 'Wyloguj', side: 'right', align: 'center' }}>
-                <LogOut />
-                <span>Wyloguj</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarFooter>
       </Sidebar>
       <SidebarInset>
-        <main className="flex-1 overflow-auto px-15 py-4 sm:py-6">{children}</main>
+        <main className="flex-1 overflow-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 py-6 md:py-8">
+          <div className="mx-auto w-full max-w-screen-2xl">
+            {children}
+          </div>
+        </main>
       </SidebarInset>
       </SidebarProvider>
     </>

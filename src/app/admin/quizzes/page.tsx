@@ -20,7 +20,8 @@ export default function AdminQuizzesPage() {
         .select('id,label,status,deadline_at,leagues(name,code),quizzes(*)')
         .order('deadline_at', { ascending: false })
         .limit(50)
-      setItems(data || [])
+      const withQuizzes = (data || []).filter((r: any) => Array.isArray(r.quizzes) && r.quizzes.length > 0)
+      setItems(withQuizzes)
     } finally {
       setLoading(false)
     }

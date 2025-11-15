@@ -135,18 +135,32 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
           }
         } catch {}
       }
-      toast({ title: 'Rejestracja pomyślna!', description: 'Przekierowujemy do panelu…' })
-      // Sync server cookies so /app server components see the session immediately
+      toast({ title: 'Rejestracja pomyślna!', description: 'Logowanie…' })
+      // Sync server cookies so /app server components and middleware see the session
+      let ok = false
       try {
         await fetch('/auth/callback', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          credentials: 'same-origin',
+          credentials: 'include',
           body: JSON.stringify({ event: 'SIGNED_IN', session: data?.session }),
         })
+        // Wait until the server sees the session to avoid redirecting to login
+        for (let i = 0; i < 20; i++) {
+          try {
+            const res = await fetch('/api/auth/ping', { credentials: 'include', cache: 'no-store' })
+            const j = await res.json().catch(() => ({}))
+            if (j?.ok) { ok = true; break }
+          } catch {}
+          await new Promise((r) => setTimeout(r, 100))
+        }
       } catch {}
-      // User already has a session after verifyOtp — go straight to app.
-      // Use hard redirect to guarantee cookies are applied before SSR guard runs.
+      if (!ok) {
+        toast({ title: 'Problem z sesją', description: 'Spróbuj ponownie zalogować się.', variant: 'destructive' as any })
+        onSuccess?.({ email: pendingProfile?.email, password: pendingProfile?.password })
+        return
+      }
+      // Use hard redirect to guarantee cookies are applied before SSR guard runs
       try {
         if (typeof window !== 'undefined') {
           window.location.assign('/app')

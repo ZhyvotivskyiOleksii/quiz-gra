@@ -522,7 +522,7 @@ const sidebarMenuButtonVariants = cva(
         outline:
           "bg-background shadow-[0_0_0_1px_hsl(var(--sidebar-border))]",
         bubble:
-          "sb-bubble h-10 rounded-2xl px-3 bg-transparent data-[active=true]:bg-white dark:data-[active=true]:bg-[hsl(var(--sidebar-accent))] data-[active=true]:text-foreground data-[active=true]:ring-1 data-[active=true]:ring-border data-[active=true]:shadow-sm relative",
+          "sb-bubble h-10 rounded-2xl px-3 bg-transparent hover:bg-muted/50 data-[active=true]:bg-card data-[active=true]:text-foreground data-[active=true]:ring-1 data-[active=true]:ring-border data-[active=true]:shadow-sm relative",
       },
       size: {
         default: "h-8 text-sm",

@@ -12,7 +12,7 @@ import {
   SidebarFooter,
   SidebarInset,
 } from '@/components/ui/sidebar';
-import { Play, History, LogOut, Settings as SettingsIcon, LayoutDashboard, Shield } from 'lucide-react';
+import { Play, History, LogOut, Settings as SettingsIcon, LayoutDashboard, Shield, Trophy } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -86,6 +86,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { href: '/app', label: 'Panel', icon: LayoutDashboard },
     { href: '/app/play', label: 'SuperGame', icon: Play },
     { href: '/app/history', label: 'Historia', icon: History },
+    { href: '/app/results', label: 'Wyniki', icon: Trophy },
   ];
   
   const handleNavigate = (href: string) => router.push(href);
@@ -109,83 +110,121 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     return pathname.startsWith(itemHref)
   };
 
+  const isPlayScreen =
+    pathname?.startsWith('/app/quizzes/') && pathname?.includes('/play')
+
   return (
     <>
-      <Header />
+      <React.Suspense fallback={null}>
+        <Header />
+      </React.Suspense>
       <SidebarProvider>
       <Sidebar collapsible={isMobile ? 'offcanvas' : 'icon'} className="border-0">
-        {/* Global header already contains the logo */}
-        <SidebarHeader className="px-2 py-2" />
-        <SidebarContent className="px-2">
-          <SidebarMenu className="gap-2">
-            {menuItems.map((item) => (
-              <SidebarMenuItem key={item.href}>
-                <SidebarMenuButton
-                  onClick={() => handleNavigate(item.href)}
-                  isActive={getActiveState(item.href)}
-                  tooltip={{ children: item.label, side: 'right', align: 'center' }}
-                  variant="bubble"
-                  size="lg"
-                >
-                  <item.icon />
-                  <span>{item.label}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            ))}
-          </SidebarMenu>
-        </SidebarContent>
-        <SidebarFooter className="mt-auto px-2 pb-4">
-          <SidebarMenu>
-            {isAdmin && (
+        <SidebarHeader />
+        <SidebarContent className="pt-20 pb-4 flex flex-col">
+          {/* Header card similar to admin panel */}
+          <div className="mx-2 mb-2 rounded-2xl bg-card text-card-foreground border border-border shadow-sm px-3 py-2 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => handleNavigate('/app')}
+              className="flex items-center gap-2 text-sm font-semibold text-foreground/90 hover:text-foreground"
+            >
+              <LayoutDashboard className="h-4 w-4" />
+              <span>Panel gracza</span>
+            </button>
+            <span
+              aria-label="status"
+              className="inline-block h-2.5 w-2.5 rounded-full bg-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.15)]"
+            />
+          </div>
+
+          {/* Main nav card */}
+          <div className="mx-2 rounded-2xl bg-card border border-border shadow-sm p-2 flex flex-col flex-1">
+            <SidebarMenu>
+              {menuItems.map((item) => (
+                <SidebarMenuItem key={item.href}>
+                  <SidebarMenuButton
+                    onClick={() => handleNavigate(item.href)}
+                    isActive={getActiveState(item.href)}
+                    tooltip={{ children: item.label, side: 'right', align: 'center' }}
+                    variant="bubble"
+                    size="lg"
+                    className="justify-start text-foreground/85 hover:text-red-500"
+                  >
+                    <item.icon className="h-4 w-4" />
+                    <span>{item.label}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+            <SidebarMenu className="mt-auto pt-4 pb-[60px] space-y-2">
+              {isAdmin && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    onClick={() => handleNavigate('/admin')}
+                    isActive={pathname?.startsWith('/admin')}
+                    tooltip={{ children: 'Admin panel', side: 'right', align: 'center' }}
+                    variant="bubble"
+                    size="lg"
+                    className="justify-start text-foreground/85 hover:text-red-500"
+                  >
+                    <Shield className="h-4 w-4" />
+                    <span>Admin</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  onClick={() => handleNavigate('/admin')}
+                  onClick={() => handleNavigate('/app/settings?tab=phone')}
+                  isActive={getActiveState('/app/settings')}
+                  tooltip={{
+                    children: needsPhone ? 'Dodaj i potwierdź numer telefonu' : 'Ustawienia',
+                    side: 'right',
+                    align: 'center',
+                  }}
                   variant="bubble"
                   size="lg"
-                  isActive={pathname?.startsWith('/admin')}
-                  tooltip={{ children: 'Admin panel', side: 'right', align: 'center' }}
+                  className="justify-start text-foreground/85 hover:text-red-500"
                 >
-                  <Shield />
-                  <span>Admin</span>
+                  <SettingsIcon className="h-4 w-4" />
+                  <span>Ustawienia</span>
+                  {needsPhone && (
+                    <span
+                      aria-label="Wymaga uwagi"
+                      title="Wymagana weryfikacja telefonu"
+                      className="ml-2 inline-flex h-5 w-5 items-center justify-center rounded-md bg-destructive text-destructive-foreground text-[12px] font-extrabold leading-none shadow-sm group-data-[collapsible=icon]:hidden animate-vibrate"
+                    >
+                      !
+                    </span>
+                  )}
                 </SidebarMenuButton>
               </SidebarMenuItem>
-            )}
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                onClick={() => handleNavigate('/app/settings?tab=phone')}
-                variant="bubble"
-                size="lg"
-                isActive={getActiveState('/app/settings')}
-                tooltip={{
-                  children: needsPhone ? 'Dodaj i potwierdź numer telefonu' : 'Ustawienia',
-                  side: 'right',
-                  align: 'center',
-                }}
-              >
-                <SettingsIcon />
-                <span>Ustawienia</span>
-                {needsPhone && (
-                  <span
-                    aria-label="Wymaga uwagi"
-                    title="Wymagana weryfikacja telefonu"
-                    className="ml-2 inline-flex h-5 w-5 items-center justify-center rounded-md bg-destructive text-destructive-foreground text-[12px] font-extrabold leading-none shadow-sm group-data-[collapsible=icon]:hidden animate-vibrate"
-                  >
-                    !
-                  </span>
-                )}
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton onClick={handleLogout} tooltip={{children: 'Wyloguj', side: 'right', align: 'center'}} variant="bubble" size="lg">
-                <LogOut />
-                <span>Wyloguj</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarFooter>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  onClick={handleLogout}
+                  tooltip={{children: 'Wyloguj', side: 'right', align: 'center'}}
+                  variant="bubble"
+                  size="lg"
+                  className="justify-start text-foreground/85 hover:text-red-500"
+                >
+                  <LogOut className="h-4 w-4" />
+                  <span>Wyloguj</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </div>
+        </SidebarContent>
       </Sidebar>
       <SidebarInset>
-        <main className="flex-1 overflow-auto px-15 py-4 sm:py-6">{children}</main>
+        <main
+          className={`flex-1 overflow-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 ${
+            isPlayScreen ? 'py-0' : 'py-6 md:py-8'
+          }`}
+        >
+          <div className="mx-auto w-full max-w-screen-2xl">
+            {children}
+          </div>
+        </main>
       </SidebarInset>
       </SidebarProvider>
     </>

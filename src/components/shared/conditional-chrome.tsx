@@ -28,7 +28,9 @@ export function ConditionalChrome({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <Header />
+      <React.Suspense fallback={null}>
+        <Header />
+      </React.Suspense>
       <main className="flex-grow w-full">{children}</main>
       <Footer />
     </>

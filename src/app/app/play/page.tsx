@@ -21,7 +21,7 @@ export default async function PlayPage() {
   const { data: rounds } = await supabase
     .from('rounds')
     .select('id,label,deadline_at,leagues(name,code),quizzes(*)')
-    .eq('status','published')
+    .neq('status','draft')
     .order('deadline_at',{ ascending: true })
     .limit(8)
 
