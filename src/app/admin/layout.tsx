@@ -11,7 +11,7 @@ import {
   SidebarMenuButton,
   SidebarInset,
 } from '@/components/ui/sidebar';
-import { LayoutDashboard, HelpCircle, Book, Users, FileClock, Settings, LogOut, ListChecks } from 'lucide-react';
+import { LayoutDashboard, Book, Users, FileClock, Settings, LogOut, ListChecks } from 'lucide-react';
 import { Header } from '@/components/shared/header';
 import { usePathname, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -77,7 +77,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const menuItems = [
     { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/admin/quizzes', label: 'Wiktoryny', icon: ListChecks },
-    { href: '/admin/questions', label: 'Pytania', icon: HelpCircle },
     { href: '/admin/settlements', label: 'Rozliczenia', icon: Book },
     { href: '/admin/users', label: 'Użytkownicy', icon: Users },
     { href: '/admin/logs', label: 'Logi audytowe', icon: FileClock },

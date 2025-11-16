@@ -10,6 +10,9 @@ export type TheSportsDbEvent = {
   intHomeScore?: string | null
   intAwayScore?: string | null
   strTimestamp?: string | null
+  dateEvent?: string | null
+  strTime?: string | null
+  strLeague?: string | null
 }
 
 // Map our league names/codes to TheSportsDB league IDs
