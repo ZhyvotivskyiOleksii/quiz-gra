@@ -15,6 +15,10 @@ export type TheSportsDbEvent = {
   strLeague?: string | null
 }
 
+export type TheSportsDbSeason = {
+  strSeason?: string | null
+}
+
 // Map our league names/codes to TheSportsDB league IDs
 const LEAGUE_ID_MAP: Record<string, string> = {
   // Names used in UI / DB
@@ -66,12 +70,29 @@ async function callEndpoint(path: string): Promise<TheSportsDbEvent[]> {
   return events.filter((e) => e && e.idEvent && e.strHomeTeam && e.strAwayTeam)
 }
 
+async function callSeasonsEndpoint(path: string): Promise<TheSportsDbSeason[]> {
+  const apiKey = getApiKey()
+  const url = `${BASE_URL}/${apiKey}/${path}`
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`TheSportsDB error ${res.status}`)
+  const json = await res.json()
+  return (json?.seasons || []) as TheSportsDbSeason[]
+}
+
 export async function fetchNextEvents(leagueApiId: string): Promise<TheSportsDbEvent[]> {
   return callEndpoint(`eventsnextleague.php?id=${encodeURIComponent(leagueApiId)}`)
 }
 
 export async function fetchPastEvents(leagueApiId: string): Promise<TheSportsDbEvent[]> {
   return callEndpoint(`eventspastleague.php?id=${encodeURIComponent(leagueApiId)}`)
+}
+
+export async function fetchSeasonEvents(leagueApiId: string, season: string): Promise<TheSportsDbEvent[]> {
+  return callEndpoint(`eventsseason.php?id=${encodeURIComponent(leagueApiId)}&s=${encodeURIComponent(season)}`)
+}
+
+export async function fetchLeagueSeasons(leagueApiId: string): Promise<TheSportsDbSeason[]> {
+  return callSeasonsEndpoint(`search_all_seasons.php?id=${encodeURIComponent(leagueApiId)}`)
 }
 
 export function toTinyBadge(url?: string | null): string | null {

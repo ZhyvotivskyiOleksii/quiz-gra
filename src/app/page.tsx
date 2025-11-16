@@ -157,7 +157,7 @@ export default function Home() {
             </div>
           </div>
           <div className="mx-auto grid max-w-5xl items-start gap-6 sm:gap-8 sm:grid-cols-2 md:gap-10 lg:gap-12 lg:grid-cols-3 mt-8 sm:mt-10 md:mt-12">
-            <Card className="hover:shadow-lg transition-shadow duration-300 border-0 dark:bg-gradient-to-b from-[#353535] to-[#222222]">
+            <Card className="border border-white/5 bg-[rgba(16,18,34,0.9)] shadow-[0_18px_50px_rgba(4,5,13,0.65)] transition-all duration-300 hover:shadow-[0_24px_60px_rgba(7,8,20,0.8)]">
               <CardHeader className="flex flex-row items-center gap-4">
                 <History className="w-8 h-8 text-primary" />
                 <CardTitle>Pytania Historyczne</CardTitle>
@@ -166,7 +166,7 @@ export default function Home() {
                 <p className="text-sm text-muted-foreground">Sprawdź swoją wiedzę z różnych dziedzin. Odpowiedzi są znane, liczy się szybkość i precyzja.</p>
               </CardContent>
             </Card>
-            <Card className="hover:shadow-lg transition-shadow duration-300 border-0 dark:bg-gradient-to-b from-[#353535] to-[#222222]">
+            <Card className="border border-white/5 bg-[rgba(16,18,34,0.9)] shadow-[0_18px_50px_rgba(4,5,13,0.65)] transition-all duration-300 hover:shadow-[0_24px_60px_rgba(7,8,20,0.8)]">
               <CardHeader className="flex flex-row items-center gap-4">
                 <BrainCircuit className="w-8 h-8 text-primary" />
                 <CardTitle>Pytania Predykcyjne</CardTitle>
@@ -175,7 +175,7 @@ export default function Home() {
                 <p className="text-sm text-muted-foreground">Przewiduj wyniki przyszłych wydarzeń. Twoja odpowiedź zostanie zweryfikowana, gdy wydarzenie się zakończy.</p>
               </CardContent>
             </Card>
-            <Card className="hover:shadow-lg transition-shadow duration-300 border-0 dark:bg-gradient-to-b from-[#353535] to-[#222222]">
+            <Card className="border border-white/5 bg-[rgba(16,18,34,0.9)] shadow-[0_18px_50px_rgba(4,5,13,0.65)] transition-all duration-300 hover:shadow-[0_24px_60px_rgba(7,8,20,0.8)]">
               <CardHeader className="flex flex-row items-center gap-4">
                 <CheckCircle className="w-8 h-8 text-primary" />
                 <CardTitle>Rozliczenia i Rankingi</CardTitle>

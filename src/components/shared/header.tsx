@@ -8,8 +8,6 @@ import { LoginForm } from '../auth/login-form';
 import { RegisterForm } from '../auth/register-form';
 import * as React from 'react';
 import { Button } from '../ui/button';
-import { ThemeSwitcher } from './theme-switcher';
-import { useIsMobile } from '@/hooks/use-mobile';
 import { getSupabase } from '@/lib/supabaseClient';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '../ui/dropdown-menu';
@@ -21,7 +19,6 @@ export function Header() {
   const [open, setOpen] = React.useState(false);
   const [authView, setAuthView] = React.useState<'login' | 'register'>('login');
   const [loginPrefill, setLoginPrefill] = React.useState<{ email?: string; password?: string; notice?: string }|null>(null);
-  const isMobile = useIsMobile();
   const [userEmail, setUserEmail] = React.useState<string | undefined>(undefined)
   const [hasSession, setHasSession] = React.useState(false)
   const [avatarUrl, setAvatarUrl] = React.useState<string | undefined>(undefined)
@@ -211,16 +208,23 @@ export function Header() {
   }
 
   return (
-    <header
-      className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
-      suppressHydrationWarning
-    >
-      <div className="w-full px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16">
-        <div className="mx-auto w-full max-w-screen-2xl flex h-16 items-center">
+    <>
+      <header
+        className="fixed top-0 left-0 right-0 z-50 border-b border-white/10 bg-background/80 backdrop-blur-xl shadow-[0_12px_45px_rgba(3,4,10,0.65)] overflow-hidden"
+        suppressHydrationWarning
+      >
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 opacity-90"
+        >
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(187,155,255,0.35),_rgba(7,8,20,0.85)_60%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,102,51,0.2),transparent_55%)]" />
+        </div>
+        <div className="relative w-full px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16">
+          <div className="mx-auto w-full max-w-screen-2xl flex h-16 items-center">
           <Logo />
           <div className="flex flex-1 items-center justify-end space-x-4">
           <nav className="flex items-center space-x-2">
-            {!isMobile && <ThemeSwitcher />}
             {(displayName || userEmail || shortId) && (
               <div className="hidden sm:flex flex-col items-end mr-1 leading-tight">
                 {/* Первая строка: имя и фамилия, если есть; иначе e‑mail */}
@@ -322,8 +326,8 @@ export function Header() {
             ) : (
             <Dialog open={open} onOpenChange={setOpen}>
               <DialogTrigger asChild>
-                <button className="flex flex-col items-center justify-center text-xs font-medium text-foreground hover:text-primary transition-colors focus:outline-none">
-                  <User className="h-6 w-6" />
+                <button className="flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-3.5 py-1.5 text-[12px] font-semibold text-foreground/80 shadow-[0_8px_20px_rgba(5,6,16,0.35)] transition-all hover:text-white hover:bg-white/10 focus:outline-none">
+                  <User className="h-5 w-5" />
                   <span>Zaloguj się</span>
                 </button>
               </DialogTrigger>
@@ -369,7 +373,9 @@ export function Header() {
           </nav>
           </div>
         </div>
-      </div>
-    </header>
+        </div>
+      </header>
+      <div aria-hidden className="h-16 w-full" />
+    </>
   );
 }

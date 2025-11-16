@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import Link from 'next/link'
 import Image from 'next/image'
-import { Timer, ChevronRight } from 'lucide-react'
+import { Timer, ChevronRight, PenSquare } from 'lucide-react'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
 
@@ -18,6 +18,10 @@ export default async function PlayPage() {
       } as any,
     }
   )
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
   const { data: rounds } = await supabase
     .from('rounds')
     .select('id,label,deadline_at,leagues(name,code),quizzes(*)')
@@ -47,6 +51,22 @@ export default async function PlayPage() {
       if (!hasQuiz) return false
       try { return new Date(r.deadline_at).getTime() > Date.now() } catch { return true }
     })
+
+  const quizIds = items
+    .map((r:any) => r.quizzes?.[0]?.id)
+    .filter((id: string | undefined): id is string => Boolean(id))
+
+  const submissionMap: Record<string, { submitted_at: string | null }> = {}
+  if (user && quizIds.length) {
+    const { data: submissions } = await supabase
+      .from('quiz_submissions')
+      .select('quiz_id,submitted_at')
+      .eq('user_id', user.id)
+      .in('quiz_id', quizIds)
+    submissions?.forEach((s) => {
+      if (s.quiz_id) submissionMap[s.quiz_id] = { submitted_at: s.submitted_at }
+    })
+  }
 
   return (
     <div className="relative mx-auto w-full max-w-[1200px] space-y-6">
@@ -81,6 +101,23 @@ export default async function PlayPage() {
               const q = r.quizzes?.[0] || {}
               const img = q.image_url || '/images/preview.webp'
               const prize = q.prize
+              const deadlineTs = new Date(r.deadline_at).getTime()
+              const now = Date.now()
+              const isClosed = Number.isFinite(deadlineTs) ? deadlineTs <= now : false
+              const hasSubmission = q.id ? Boolean(submissionMap[q.id]) : false
+              const kickoffLabel = Number.isFinite(deadlineTs)
+                ? new Date(deadlineTs).toLocaleString('pl-PL', {
+                    month: 'short',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })
+                : '—'
+              const actionLabel = isClosed
+                ? 'Zamknięte'
+                : hasSubmission
+                  ? 'Edytuj typy'
+                  : 'Zagraj za darmo'
               return (
                 <div key={r.id} className="group relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-r from-[#3a0d0d] via-[#5a0f0f] to-[#7a1313] p-0 shadow-xl transition-transform hover:-translate-y-0.5 hover:shadow-2xl">
                   <div className="flex">
@@ -97,13 +134,31 @@ export default async function PlayPage() {
                       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_100%_at_70%_0%,rgba(255,255,255,0.06),transparent_40%)]" />
                       <div className="text-[11px] uppercase tracking-[0.12em] text-white/75">Runda {r.label}</div>
                       <div className="mt-1 text-3xl md:text-4xl font-headline font-extrabold text-white drop-shadow">{r.leagues?.name || 'Wiktoryna'}</div>
-                      <div className="mt-2 text-xl sm:text-2xl font-extrabold text-yellow-300 drop-shadow">{typeof prize === 'number' ? prize.toLocaleString('pl-PL') + ' zł' : ''}</div>
-                      <div className="mt-1 text-xs text-white/90">{new Date(r.deadline_at).toLocaleString('pl-PL', { month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit' })}</div>
+                      <div className="mt-2 text-xl sm:text-2xl font-extrabold text-yellow-300 drop-shadow">
+                        {typeof prize === 'number' ? prize.toLocaleString('pl-PL') + ' zł' : ''}
+                      </div>
+                      <div className="mt-1 text-xs text-white/90">{kickoffLabel}</div>
                       <div className="mt-4 self-end">
                         {q.id && (
-                          <Button asChild className="h-10 rounded-full bg-yellow-400 text-black hover:bg-yellow-300 font-semibold shadow">
-                            <Link href={`/app/quizzes/${q.id}/play`}>Zagraj za darmo <ChevronRight className="ml-1 h-4 w-4" /></Link>
-                          </Button>
+                          isClosed ? (
+                            <Button
+                              disabled
+                              className="h-10 rounded-full bg-white/15 text-white/70"
+                            >
+                              {actionLabel}
+                            </Button>
+                          ) : (
+                            <Button
+                              asChild
+                              className={`h-10 rounded-full font-semibold shadow ${hasSubmission ? 'bg-white/15 text-white hover:bg-white/25' : 'bg-yellow-400 text-black hover:bg-yellow-300'}`}
+                            >
+                              <Link href={`/app/quizzes/${q.id}/play`}>
+                                {hasSubmission ? <PenSquare className="mr-1.5 h-4 w-4" /> : null}
+                                {actionLabel}
+                                {!hasSubmission && <ChevronRight className="ml-1 h-4 w-4" />}
+                              </Link>
+                            </Button>
+                          )
                         )}
                       </div>
                     </div>

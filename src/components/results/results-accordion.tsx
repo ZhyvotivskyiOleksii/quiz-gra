@@ -95,141 +95,174 @@ export function ResultsAccordion({ submissions }: { submissions: SubmissionSumma
         filtered.map((submission) => {
           const isOpen = openId === submission.id
           const state = details[submission.id]?.status ?? 'idle'
+          const canViewResults = submission.status !== 'pending'
           return (
-            <div
-              key={submission.id}
-              className="overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-r from-[#220d19] via-[#381221] to-[#5c121f] text-white shadow-2xl"
-            >
-              <div className="flex flex-col lg:flex-row">
-                <div className="relative h-48 w-full overflow-hidden lg:w-2/5">
-                  <Image
-                    src={submission.imageUrl || '/images/preview.webp'}
-                    alt={submission.quizTitle}
-                    fill
-                    className="object-cover"
-                  />
-                  {submission.prize ? (
-                    <div className="absolute left-4 top-4 rounded-full bg-emerald-500/90 px-3 py-1 text-xs font-semibold text-white shadow">
-                      {submission.prize.toLocaleString('pl-PL')} zł
+            <div key={submission.id} className="space-y-3">
+              <div className="overflow-hidden rounded-[32px] border border-white/10 bg-[rgba(18,10,25,0.92)] text-white shadow-[0_30px_80px_rgba(3,3,10,0.55)] backdrop-blur-xl">
+                <div className="grid grid-cols-1 gap-0 lg:grid-cols-[360px,1fr]">
+                  <div className="relative aspect-[16/9] w-full overflow-hidden lg:aspect-auto lg:min-h-[220px]">
+                    <Image
+                      src={submission.imageUrl || '/images/preview.webp'}
+                      alt={submission.quizTitle}
+                      fill
+                      className="object-cover"
+                    />
+                    {submission.prize ? (
+                      <div className="absolute left-4 top-4 rounded-full bg-emerald-500/90 px-3 py-1 text-xs font-semibold text-white shadow">
+                        {submission.prize.toLocaleString('pl-PL')} zł
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-1 flex-col justify-center gap-6 p-5 sm:p-6 lg:p-8">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div className="space-y-2">
+                        <p className="text-[11px] uppercase tracking-[0.35em] text-white/60">
+                          {submission.roundLabel ? `Runda kolejka ${submission.roundLabel}` : 'Runda'}
+                        </p>
+                        <div>
+                          <h3 className="text-3xl font-headline font-extrabold">{submission.quizTitle}</h3>
+                          {submission.deadline && (
+                            <p className="text-sm text-white/70">
+                              {new Date(submission.deadline).toLocaleString('pl-PL')}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <StatusPill status={submission.status} />
                     </div>
-                  ) : null}
-                </div>
-                <div className="flex-1 p-5 sm:p-6">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.2em] text-white/70">
-                        {submission.roundLabel ? `Runda ${submission.roundLabel}` : 'Runda'}
-                      </p>
-                      <h3 className="mt-1 text-3xl font-headline font-extrabold">{submission.quizTitle}</h3>
-                      {submission.deadline && (
-                        <p className="text-sm text-white/70">
-                          {new Date(submission.deadline).toLocaleString('pl-PL')}
+
+                    <div className="flex flex-wrap gap-6 text-sm text-white/80">
+                      <div className="leading-tight">
+                        <p className="text-white/60">Wynik</p>
+                        <p className="text-lg font-semibold">
+                          {submission.correct} / {submission.total}
+                        </p>
+                      </div>
+                      <div className="leading-tight">
+                        <p className="text-white/60">Data gry</p>
+                        <p className="text-lg font-semibold">
+                          {submission.submittedAt
+                            ? new Date(submission.submittedAt).toLocaleDateString('pl-PL', {
+                                day: '2-digit',
+                                month: 'short',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })
+                            : '—'}
+                        </p>
+                      </div>
+                      {typeof submission.points === 'number' && (
+                        <div className="leading-tight">
+                          <p className="text-white/60">Punkty</p>
+                          <p className="text-lg font-semibold text-emerald-300">+{submission.points}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex flex-col gap-2 pt-1">
+                      <div className="flex flex-wrap gap-3">
+                        <Button
+                          disabled={!canViewResults}
+                          className={cn(
+                            'rounded-full px-6 text-sm font-semibold shadow-[0_15px_35px_rgba(0,0,0,0.35)]',
+                            canViewResults
+                              ? isOpen
+                                ? 'bg-white text-black'
+                                : 'bg-[linear-gradient(120deg,#ff6a27,#bd72ff)] text-black/90'
+                              : 'bg-white/10 text-white/50 cursor-not-allowed',
+                          )}
+                          onClick={() => {
+                            if (canViewResults) handleToggle(submission.id)
+                          }}
+                        >
+                          {canViewResults ? (
+                            isOpen ? (
+                              <>
+                                Ukryj wyniki <ChevronUp className="ml-1 h-4 w-4" />
+                              </>
+                            ) : (
+                              <>
+                                Pokaż wyniki <ChevronDown className="ml-1 h-4 w-4" />
+                              </>
+                            )
+                          ) : (
+                            <>Wyniki wkrótce</>
+                          )}
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          className="rounded-full border border-white/15 bg-white/5 px-6 text-sm text-white hover:bg-white/15"
+                        >
+                          <Gift className="mr-2 h-4 w-4" />
+                          Nagrody
+                        </Button>
+                      </div>
+                      {!canViewResults && (
+                        <p className="text-xs text-white/60">
+                          Wyniki pojawią się po zakończeniu i rozliczeniu rundy.
                         </p>
                       )}
                     </div>
-                    <StatusPill status={submission.status} />
                   </div>
+                </div>
+              </div>
 
-                  <div className="mt-5 flex flex-wrap gap-4 text-sm text-white/85">
-                    <div>
-                      <span className="text-white/60">Wynik:</span> {submission.correct} / {submission.total}
+              {isOpen && canViewResults && (
+                <div className="rounded-[28px] border border-white/10 bg-black/20 p-4">
+                  {state === 'loading' && (
+                    <div className="flex items-center justify-center gap-2 text-white/70">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Wczytywanie…
                     </div>
-                    <div>
-                      <span className="text-white/60">Data gry:</span>{' '}
-                      {submission.submittedAt
-                        ? new Date(submission.submittedAt).toLocaleDateString('pl-PL')
-                        : '—'}
+                  )}
+                  {state === 'error' && (
+                    <div className="text-sm text-red-300">
+                      {details[submission.id]?.status === 'error' &&
+                        (details[submission.id] as any).message}
                     </div>
-                    {typeof submission.points === 'number' && (
-                      <div>
-                        <span className="text-white/60">Punkty:</span> {submission.points}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="mt-6 flex flex-wrap gap-3">
-                    <Button
-                      className="rounded-full bg-white text-black hover:bg-white/90"
-                      onClick={() => handleToggle(submission.id)}
-                    >
-                      {isOpen ? (
-                        <>
-                          Ukryj wyniki <ChevronUp className="ml-1 h-4 w-4" />
-                        </>
-                      ) : (
-                        <>
-                          Pokaż wyniki <ChevronDown className="ml-1 h-4 w-4" />
-                        </>
-                      )}
-                    </Button>
-                    <Button variant="outline" className="rounded-full border-white/40 text-white hover:bg-white/10">
-                      <Gift className="mr-2 h-4 w-4" />
-                      Nagrody
-                    </Button>
-                  </div>
-
-                  {isOpen && (
-                    <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-4">
-                      {state === 'loading' && (
-                        <div className="flex items-center justify-center gap-2 text-white/70">
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          Wczytywanie…
-                        </div>
-                      )}
-                      {state === 'error' && (
-                        <div className="text-sm text-red-300">
-                          {details[submission.id]?.status === 'error' &&
-                            (details[submission.id] as any).message}
-                        </div>
-                      )}
-                      {state === 'loaded' && (
-                        <div className="space-y-3">
-                          {(details[submission.id] as any).data.map(
-                            (question: QuestionDetail, idx: number) => (
-                              <div
-                                key={question.id}
-                                className="flex items-start gap-4 rounded-2xl bg-white/5 p-3"
-                              >
-                                <div className="mt-1 flex h-8 w-8 items-center justify-center rounded-full border border-white/40 text-sm font-semibold">
-                                  {idx + 1}
-                                </div>
-                                <div className="flex-1 space-y-1 text-sm">
-                                  {question.matchLabel && (
-                                    <p className="text-xs uppercase tracking-wide text-white/60">
-                                      {question.matchLabel}
-                                    </p>
-                                  )}
-                                  <p className="font-semibold">{question.prompt}</p>
-                                  <p className="text-white">
-                                    Twoja odpowiedź: <span className="font-semibold">{question.userAnswer}</span>
-                                  </p>
-                                  {question.status === 'wrong' && question.correctAnswer && (
-                                    <p className="text-xs text-red-300">
-                                      Poprawna odpowiedź: {question.correctAnswer}
-                                    </p>
-                                  )}
-                                  {question.status === 'pending' && (
-                                    <p className="text-xs text-amber-300">Oczekuje na rozliczenie</p>
-                                  )}
-                                </div>
-                                <div className="mt-1">
-                                  {question.status === 'correct' && (
-                                    <CheckCircle2 className="h-6 w-6 text-emerald-400" />
-                                  )}
-                                  {question.status === 'wrong' && <XCircle className="h-6 w-6 text-red-400" />}
-                                  {question.status === 'pending' && (
-                                    <Clock className="h-6 w-6 text-yellow-300" />
-                                  )}
-                                </div>
-                              </div>
-                            ),
-                          )}
-                        </div>
+                  )}
+                  {state === 'loaded' && (
+                    <div className="space-y-3">
+                      {(details[submission.id] as any).data.map(
+                        (question: QuestionDetail, idx: number) => (
+                          <div
+                            key={question.id}
+                            className="flex items-start gap-4 rounded-2xl bg-white/5 p-3"
+                          >
+                            <div className="mt-1 flex h-8 w-8 items-center justify-center rounded-full border border-white/40 text-sm font-semibold">
+                              {idx + 1}
+                            </div>
+                            <div className="flex-1 space-y-1 text-sm">
+                              {question.matchLabel && (
+                                <p className="text-xs uppercase tracking-wide text-white/60">
+                                  {question.matchLabel}
+                                </p>
+                              )}
+                              <p className="font-semibold">{question.prompt}</p>
+                              <p className="text-white">
+                                Twoja odpowiedź: <span className="font-semibold">{question.userAnswer}</span>
+                              </p>
+                              {question.status === 'wrong' && question.correctAnswer && (
+                                <p className="text-xs text-red-300">Poprawna odpowiedź: {question.correctAnswer}</p>
+                              )}
+                              {question.status === 'pending' && (
+                                <p className="text-xs text-amber-300">Oczekuje na rozliczenie</p>
+                              )}
+                            </div>
+                            <div className="mt-1">
+                              {question.status === 'correct' && (
+                                <CheckCircle2 className="h-6 w-6 text-emerald-400" />
+                              )}
+                              {question.status === 'wrong' && <XCircle className="h-6 w-6 text-red-400" />}
+                              {question.status === 'pending' && <Clock className="h-6 w-6 text-yellow-300" />}
+                            </div>
+                          </div>
+                        ),
                       )}
                     </div>
                   )}
                 </div>
-              </div>
+              )}
             </div>
           )
         })

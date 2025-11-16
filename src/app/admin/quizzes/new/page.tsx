@@ -11,13 +11,24 @@ import Link from 'next/link'
 import { Timer, Settings2 } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DateTimeField } from '@/components/ui/datetime-field'
-import { fetchNextEvents, fetchPastEvents, mapLeagueToApiId, type TheSportsDbEvent, toTinyBadge } from '@/lib/footballApi'
-import { matchKey, toKickoffIso } from '@/lib/matchUtils'
+import {
+  fetchNextEvents,
+  fetchPastEvents,
+  fetchSeasonEvents,
+  fetchLeagueSeasons,
+  mapLeagueToApiId,
+  type TheSportsDbEvent,
+  type TheSportsDbSeason,
+  toTinyBadge,
+} from '@/lib/footballApi'
+import { eventTimestamp, matchKey, toKickoffIso } from '@/lib/matchUtils'
 
 type SlotKind = 'history_single'|'history_numeric'|'future_1x2'|'future_score'
 
 export default function NewQuizPage() {
   const router = useRouter()
+  const UPCOMING_WINDOW_MS = 1000 * 60 * 60 * 24 * 35
+  const UPCOMING_MATCH_LIMIT = 20
   const [leagues, setLeagues] = React.useState<{id:string;name:string;code:string}[]>([])
   const [leaguesLoading, setLeaguesLoading] = React.useState(true)
   const [leaguesError, setLeaguesError] = React.useState<string | null>(null)
@@ -34,7 +45,7 @@ export default function NewQuizPage() {
   const [matches, setMatches] = React.useState<TheSportsDbEvent[]>([])
   const [matchesLeagueId, setMatchesLeagueId] = React.useState<string | null>(null)
   const [matchesLoading, setMatchesLoading] = React.useState(false)
-  const [matchesSource, setMatchesSource] = React.useState<'next' | 'past' | null>(null)
+  const [matchesSource, setMatchesSource] = React.useState<'next' | 'past' | 'season' | null>(null)
   const [matchesError, setMatchesError] = React.useState<string | null>(null)
   const [matchesInfo, setMatchesInfo] = React.useState<string | null>(null)
   // Manual history slots (3) + auto future selection (3)
@@ -86,6 +97,29 @@ export default function NewQuizPage() {
     if (leagueId && leagues.length) loadMatchesForLeague(leagueId)
   }, [leagueId, leagues])
 
+  React.useEffect(() => {
+    if (!leagueId || leagues.length === 0) {
+      setTitle('')
+      setLabel('')
+      return
+    }
+    const league = leagues.find((l) => l.id === leagueId)
+    const autoTitle = league?.name || ''
+    setTitle(autoTitle)
+    let cancelled = false
+    ;(async () => {
+      try {
+        const suggested = await suggestLabelForLeague(leagueId)
+        if (!cancelled) setLabel(suggested)
+      } catch {
+        if (!cancelled) setLabel('Kolejka 1')
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [leagueId, leagues])
+
   async function loadMatchesForLeague(lid: string) {
     setMatchesLoading(true)
     setMatchesInfo(null)
@@ -107,14 +141,27 @@ export default function NewQuizPage() {
         setMatchesError('Brak przypisanego ID w TheSportsDB dla tej ligi.')
         return
       }
-      let events = await fetchNextEvents(apiId)
+      const usedKeys = await fetchUsedMatchKeys(lid)
+      const schedule = await loadSeasonSchedule(apiId, usedKeys)
+      if (schedule?.events?.length) {
+        setMatches(schedule.events)
+        autoScheduleTimes(schedule.events)
+        setMatchesLeagueId(lid)
+        setMatchesSource('season')
+        setMatchesError(null)
+        setMatchesInfo(schedule.info || 'Harmonogram sezonu — najbliższe mecze.')
+        return
+      }
+
+      let events = filterEventsByUsed(await fetchNextEvents(apiId), usedKeys)
       let source: 'next' | 'past' = 'next'
       if (!events?.length) {
-        events = await fetchPastEvents(apiId)
+        events = filterEventsByUsed(await fetchPastEvents(apiId), usedKeys)
         source = 'past'
       }
       if (events?.length) {
         setMatches(events)
+        autoScheduleTimes(events)
         setMatchesLeagueId(lid)
         setMatchesSource(source)
         setMatchesError(null)
@@ -154,7 +201,9 @@ export default function NewQuizPage() {
         .select('id')
         .single()
       if (rerr) throw rerr
-      let insert: any = { round_id: round!.id, title }
+      const leagueMeta = leagues.find((l) => l.id === leagueId)
+      const safeTitle = title || leagueMeta?.name || 'Wiktoryna'
+      let insert: any = { round_id: round!.id, title: safeTitle }
       if (imageUrl) insert.image_url = imageUrl
       if (prize) insert.prize = Number(prize)
       let quizRes = await s.from('quizzes').insert(insert).select('id').single()
@@ -260,6 +309,18 @@ export default function NewQuizPage() {
     )
   }
 
+  function autoScheduleTimes(events: TheSportsDbEvent[]) {
+    if (!events.length) return
+    const ts = eventTimestamp(events[0])
+    if (!ts) return
+    const kickoffInput = toInputValue(ts)
+    setDeadlineAt(kickoffInput)
+    if (!startsAt) {
+      const now = new Date()
+      setStartsAt(toInputValue(now < ts ? now : ts))
+    }
+  }
+
   async function ensureRoundMatches(roundId: string, items: { kind: SlotKind; match_id?: string | null }[]) {
     const requiredExternal = Array.from(new Set(
       items
@@ -324,6 +385,57 @@ export default function NewQuizPage() {
     }
 
     return mapping
+  }
+
+  async function fetchUsedMatchKeys(leagueId: string): Promise<Set<string>> {
+    try {
+      const s = getSupabase()
+      const { data } = await s
+        .from('matches')
+        .select('home_team,away_team,kickoff_at,rounds!inner(league_id)')
+        .eq('rounds.league_id', leagueId)
+      const keys = new Set<string>()
+      for (const row of data || []) {
+        keys.add(matchKey(row.home_team, row.away_team, row.kickoff_at))
+      }
+      return keys
+    } catch (err) {
+      console.error('fetchUsedMatchKeys error', err)
+      return new Set<string>()
+    }
+  }
+
+function filterEventsByUsed(events: TheSportsDbEvent[] | undefined, used: Set<string>) {
+  if (!events || events.length === 0 || used.size === 0) return events || []
+  return events.filter((event) => {
+    const key = matchKey(event.strHomeTeam, event.strAwayTeam, toKickoffIso(event))
+    return !used.has(key)
+  })
+}
+
+function autoScheduleTimes(events: TheSportsDbEvent[]) {
+  if (!events.length) return
+  const ts = eventTimestamp(events[0])
+  if (!ts) return
+  const deadline = new Date(ts.getTime() - 15 * 60 * 1000).toISOString().slice(0,16)
+  setDeadlineAt(deadline)
+}
+
+  async function loadSeasonSchedule(apiId: string, usedKeys: Set<string>) {
+    try {
+      const seasonName = await findSeasonWithUpcomingEvents(apiId, usedKeys)
+      if (!seasonName) return null
+      const schedule = await fetchSeasonEvents(apiId, seasonName)
+      const curated = curateSeasonEvents(schedule, UPCOMING_WINDOW_MS, UPCOMING_MATCH_LIMIT, usedKeys)
+      if (!curated.length) return null
+      return {
+        events: curated,
+        info: `Sezon ${seasonName} — najbliższe ${curated.length} meczów.`,
+      }
+    } catch (err) {
+      console.error('season schedule fetch error', err)
+      return null
+    }
   }
 
   return (
@@ -414,11 +526,21 @@ export default function NewQuizPage() {
                   </div>
                 </div>
               )}
-              <NotchedInput borderless label={'Tytuł wiktoryny'} value={title} onChange={(e:any)=>setTitle(e.target.value)} />
+              <div>
+                <Label>Tytuł wiktoryny</Label>
+                <div className="mt-1 h-11 rounded-xl border border-border/40 bg-muted/20 px-4 flex items-center text-sm text-muted-foreground">
+                  {title || '— wybierz ligę —'}
+                </div>
+              </div>
               <NotchedInput borderless label={'Etykieta rundy/etapu (np. "14 kolejka")'} value={label} onChange={(e:any)=>setLabel(e.target.value)} />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <DateTimeField label="Początek publikacji" value={startsAt} onChange={setStartsAt} className="w-full" />
-                <DateTimeField label="Deadline odpowiedzi" value={deadlineAt} onChange={setDeadlineAt} className="w-full" />
+                <div>
+                  <Label>Deadline odpowiedzi</Label>
+                  <div className="mt-1 h-11 rounded-xl border border-border/40 bg-muted/20 px-4 flex items-center text-sm text-muted-foreground">
+                    {deadlineAt ? formatInputDisplay(deadlineAt) : 'Ustawi się automatycznie po wyborze meczu'}
+                  </div>
+                </div>
               </div>
               <NotchedInput borderless type="number" label={'Nagroda (zł)'} value={prize} onChange={(e:any)=>setPrize(e.target.value)} />
               <div className="flex items-center gap-2">
@@ -729,4 +851,104 @@ function normalizeMatchId(raw: string | null | undefined, mapping: Record<string
   if (!raw) return null
   if (isUuid(raw)) return raw
   return mapping[raw] || null
+}
+
+async function suggestLabelForLeague(leagueId: string) {
+  const s = getSupabase()
+  const { count, error } = await s
+    .from('rounds')
+    .select('id', { count: 'exact', head: true })
+    .eq('league_id', leagueId)
+  if (error) throw error
+  const next = (count ?? 0) + 1
+  return `Kolejka ${next}`
+}
+
+async function findSeasonWithUpcomingEvents(apiId: string, usedKeys?: Set<string>) {
+  const currentYear = new Date().getFullYear()
+  const candidateSeasons = [
+    `${currentYear}-${currentYear + 1}`,
+    `${currentYear - 1}-${currentYear}`,
+    `${currentYear - 2}-${currentYear - 1}`,
+    `${currentYear}`,
+    `${currentYear - 1}`,
+  ]
+  for (const candidate of candidateSeasons) {
+    try {
+      const events = await fetchSeasonEvents(apiId, candidate)
+      const curated = curateSeasonEvents(events, 1000 * 60 * 60 * 24 * 180, 1, usedKeys)
+      if (curated.length > 0) return candidate
+    } catch {}
+  }
+  try {
+    const seasons = await fetchLeagueSeasons(apiId)
+    const fallback = chooseActiveSeason(seasons)
+    if (!fallback) return null
+    const events = await fetchSeasonEvents(apiId, fallback)
+    const curated = curateSeasonEvents(events, 1000 * 60 * 60 * 24 * 180, 1, usedKeys)
+    return curated.length > 0 ? fallback : null
+  } catch {
+    return null
+  }
+}
+
+function chooseActiveSeason(seasons: TheSportsDbSeason[] | undefined) {
+  if (!seasons || seasons.length === 0) return null
+  const scored = seasons
+    .map((season) => {
+      const value = seasonValue(season.strSeason || '')
+      return value === null ? null : { name: season.strSeason!, value }
+    })
+    .filter((item): item is { name: string; value: number } => Boolean(item))
+  if (!scored.length) return seasons[seasons.length - 1]?.strSeason || null
+  scored.sort((a, b) => b.value - a.value)
+  return scored[0].name
+}
+
+function seasonValue(label: string): number | null {
+  if (!label) return null
+  const range = label.split('-').map((part) => parseInt(part, 10))
+  if (range.length === 2 && Number.isFinite(range[1])) {
+    return range[1]
+  }
+  if (Number.isFinite(range[0])) {
+    return range[0]
+  }
+  return null
+}
+
+function curateSeasonEvents(events: TheSportsDbEvent[] | undefined, windowMs: number, limit: number, excludeKeys?: Set<string>) {
+  if (!events || events.length === 0) return []
+  const now = Date.now()
+  const windowLimit = now + windowMs
+  const enriched = events
+    .map((event) => {
+      const ts = eventTimestamp(event)
+      return ts ? { event, time: ts.getTime(), key: matchKey(event.strHomeTeam, event.strAwayTeam, ts.toISOString()) } : null
+    })
+    .filter((entry): entry is { event: TheSportsDbEvent; time: number; key: string } => Boolean(entry))
+  if (!enriched.length) return []
+
+  let upcoming = enriched.filter((item) => item.time >= now && item.time <= windowLimit)
+  if (!upcoming.length) {
+    upcoming = enriched.filter((item) => item.time >= now)
+  }
+  if (!upcoming.length) return []
+  return upcoming
+    .filter((item) => !excludeKeys?.has(item.key))
+    .sort((a, b) => a.time - b.time)
+    .slice(0, limit)
+    .map((item) => item.event)
+}
+
+function toInputValue(date: Date) {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+function formatInputDisplay(value: string) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
 }

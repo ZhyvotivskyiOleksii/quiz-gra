@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { fetchPastEvents, mapLeagueToApiId, type TheSportsDbEvent } from '@/lib/footballApi'
 import { eventTimestamp, normalizeTeamName } from '@/lib/matchUtils'
 
@@ -198,6 +198,7 @@ async function settleFutureQuestions() {
     }
 
     settledMatches += 1
+    await lockRoundIfSettled(supabase, match.round_id)
   }
 
   return { settledMatches, settledQuestions, skipped }
@@ -230,4 +231,16 @@ function determineOutcomeSymbol(home: number, away: number) {
   if (home > away) return '1'
   if (home < away) return '2'
   return 'X'
+}
+
+async function lockRoundIfSettled(supabase: SupabaseClient, roundId: string) {
+  const { count, error } = await supabase
+    .from('quiz_questions')
+    .select('id,quizzes!inner(round_id)', { count: 'exact', head: true })
+    .eq('quizzes.round_id', roundId)
+    .in('kind', FUTURE_KINDS as any)
+    .is('correct', null)
+  if (!error && (count ?? 0) === 0) {
+    await supabase.from('rounds').update({ status: 'locked' }).eq('id', roundId)
+  }
 }

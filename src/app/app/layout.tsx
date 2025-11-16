@@ -113,13 +113,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const isPlayScreen =
     pathname?.startsWith('/app/quizzes/') && pathname?.includes('/play')
 
+  const defaultPaddingX = 'px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16'
+
   return (
-    <>
-      <React.Suspense fallback={null}>
-        <Header />
-      </React.Suspense>
-      <SidebarProvider>
-      <Sidebar collapsible={isMobile ? 'offcanvas' : 'icon'} className="border-0">
+    <div className="relative min-h-svh w-full overflow-hidden bg-[#050611]">
+      <div aria-hidden className="pointer-events-none absolute inset-0">
+        <div className="absolute inset-0 bg-[#050611]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(187,155,255,0.25),transparent_55%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_85%_5%,rgba(255,106,39,0.2),transparent_55%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom,rgba(10,12,28,0.85),rgba(5,6,17,1))]" />
+      </div>
+      <div className="relative z-10 flex min-h-svh flex-col">
+        <React.Suspense fallback={null}>
+          <Header />
+        </React.Suspense>
+        <SidebarProvider>
+          <Sidebar collapsible={isMobile ? 'offcanvas' : 'icon'} className="border-0 bg-transparent sidebar-glass">
         <SidebarHeader />
         <SidebarContent className="pt-20 pb-4 flex flex-col">
           {/* Header card similar to admin panel */}
@@ -214,19 +223,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </SidebarMenu>
           </div>
         </SidebarContent>
-      </Sidebar>
-      <SidebarInset>
-        <main
-          className={`flex-1 overflow-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 ${
-            isPlayScreen ? 'py-0' : 'py-6 md:py-8'
-          }`}
-        >
-          <div className="mx-auto w-full max-w-screen-2xl">
+          </Sidebar>
+          <SidebarInset className="bg-transparent">
+            <main
+          className={`flex-1 overflow-auto ${
+            isPlayScreen ? 'px-0' : defaultPaddingX
+          } ${isPlayScreen ? 'py-0' : 'py-6 md:py-8'}`}
+            >
+          <div className={`mx-auto w-full ${isPlayScreen ? '' : 'max-w-screen-2xl'}`}>
             {children}
           </div>
         </main>
-      </SidebarInset>
-      </SidebarProvider>
-    </>
+          </SidebarInset>
+        </SidebarProvider>
+      </div>
+    </div>
   );
 }

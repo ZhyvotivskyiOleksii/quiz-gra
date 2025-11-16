@@ -107,7 +107,7 @@ export default async function ResultsPage() {
   const correctAnswers = submissions.reduce((sum, s) => sum + (s.correct || 0), 0)
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto w-full max-w-4xl space-y-6">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <StatCard
           title="Wygrane"

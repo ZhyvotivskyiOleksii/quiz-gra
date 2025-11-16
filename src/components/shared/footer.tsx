@@ -1,23 +1,23 @@
 'use client';
-import { ThemeSwitcher } from './theme-switcher';
-import { useIsMobile } from '@/hooks/use-mobile';
-
 export function Footer() {
-  const isMobile = useIsMobile();
   return (
-    <footer className="w-full shrink-0 border-t mt-12 border-border/50">
-        <div className="container flex flex-col gap-4 sm:flex-row py-6 items-center max-w-[1440px] mx-auto px-10">
-            <p className="text-xs text-muted-foreground order-2 sm:order-1">© 2024 QuizTime. Wszelkie prawa zastrzeżone.</p>
-            {isMobile && <div className="order-1 sm:order-2"><ThemeSwitcher /></div>}
-            <nav className="sm:ml-auto flex gap-4 sm:gap-6 order-3 sm:order-3">
-              <a href="#" className="text-xs hover:underline underline-offset-4">
-                Regulamin
-              </a>
-              <a href="#" className="text-xs hover:underline underline-offset-4">
-                Polityka Prywatności
-              </a>
-            </nav>
-        </div>
-      </footer>
+    <footer className="relative mt-12 w-full shrink-0 border-t border-white/10 bg-background/70 backdrop-blur-sm shadow-[0_-10px_30px_rgba(4,5,12,0.55)]">
+      <div aria-hidden className="pointer-events-none absolute inset-0 opacity-70">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom,_rgba(187,155,255,0.18),_transparent_55%)]" />
+      </div>
+      <div className="container relative flex max-w-[1440px] flex-col items-center gap-4 px-6 py-6 sm:flex-row sm:px-10">
+        <p className="order-2 text-xs text-muted-foreground sm:order-1">
+          © 2024 QuizTime. Wszelkie prawa zastrzeżone.
+        </p>
+        <nav className="order-3 flex gap-4 text-xs sm:order-3 sm:ml-auto sm:gap-6">
+          <a href="#" className="text-muted-foreground transition hover:text-white">
+            Regulamin
+          </a>
+          <a href="#" className="text-muted-foreground transition hover:text-white">
+            Polityka Prywatności
+          </a>
+        </nav>
+      </div>
+    </footer>
   );
 }
