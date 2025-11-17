@@ -2,13 +2,14 @@
 import * as React from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { getSupabase } from '@/lib/supabaseClient'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import NotchedInput from '@/components/ui/notched-input'
 import { DateTimeField } from '@/components/ui/datetime-field'
 import { useToast } from '@/hooks/use-toast'
 import { Label } from '@/components/ui/label'
 import ImageUploader from '@/components/admin/image-uploader'
+import { sumPrizePools, type PrizeBracketRow } from '@/lib/prizeBrackets'
 
 type QuizRow = { id: string; title: string; round_id: string }
 type RoundRow = {
@@ -28,6 +29,7 @@ export default function AdminQuizDetailsPage() {
   const [deadlineAt, setDeadlineAt] = React.useState('')
   const [imageUrl, setImageUrl] = React.useState('')
   const [prize, setPrize] = React.useState<string>('')
+  const [prizeBrackets, setPrizeBrackets] = React.useState<PrizeBracketRow[]>([])
   const [saving, setSaving] = React.useState(false)
   // Questions state
   const [qs, setQs] = React.useState<any[]>([])
@@ -39,6 +41,9 @@ export default function AdminQuizDetailsPage() {
   const [editing, setEditing] = React.useState<string | null>(null)
   const [editData, setEditData] = React.useState<any>({})
   const [showAddForm, setShowAddForm] = React.useState(false)
+  const prizeBracketsTotal = React.useMemo(() => sumPrizePools(prizeBrackets), [prizeBrackets])
+  const [settling, setSettling] = React.useState(false)
+  const [historyAutoLoading, setHistoryAutoLoading] = React.useState(false)
 
   async function load() {
     const s = getSupabase()
@@ -55,6 +60,7 @@ export default function AdminQuizDetailsPage() {
       setStartsAt((r as any).starts_at ? (r as any).starts_at.substring(0,16) : '')
       setDeadlineAt((r as any).deadline_at ? (r as any).deadline_at.substring(0,16) : '')
     }
+    await loadPrizeBracketsData((q as any).id)
   }
 
   React.useEffect(() => { load() }, [id])
@@ -86,6 +92,26 @@ export default function AdminQuizDetailsPage() {
         .order('kickoff_at', { ascending: true })
       setMatches(data || [])
     } catch {}
+  }
+
+  async function loadPrizeBracketsData(quizId: string) {
+    try {
+      const s = getSupabase()
+      const { data } = await s
+        .from('quiz_prize_brackets')
+        .select('id,correct_answers,pool')
+        .eq('quiz_id', quizId)
+        .order('correct_answers', { ascending: true })
+      const rows =
+        (data || []).map((row: any, idx: number) => ({
+          id: row.id || `bracket-${idx}-${row.correct_answers}`,
+          correct: Number(row.correct_answers) || 0,
+          pool: Number(row.pool) || 0,
+        })) || []
+      setPrizeBrackets(rows)
+    } catch {
+      setPrizeBrackets([])
+    }
   }
 
   async function saveBasics() {
@@ -142,6 +168,21 @@ export default function AdminQuizDetailsPage() {
     } catch (e: any) {
       toast({ title: 'Błąd zmiany statusu', description: e?.message ?? '', variant: 'destructive' as any })
     } finally { setSaving(false) }
+  }
+
+  async function settleQuizScores() {
+    if (!quiz) return
+    setSettling(true)
+    try {
+      const s = getSupabase()
+      const { error } = await s.rpc('settle_quiz', { p_quiz: quiz.id })
+      if (error) throw error
+      toast({ title: 'Wyniki zostały przeliczone' })
+    } catch (e: any) {
+      toast({ title: 'Błąd rozliczenia', description: e?.message ?? '', variant: 'destructive' as any })
+    } finally {
+      setSettling(false)
+    }
   }
 
   // --- Questions helpers ---
@@ -222,6 +263,28 @@ export default function AdminQuizDetailsPage() {
       return
     }
     await addQuestion()
+  }
+
+  async function autoFillHistoryQuestions(amount = 3) {
+    if (!quiz) return
+    setHistoryAutoLoading(true)
+    try {
+      const res = await fetch('/api/admin/history-bank/assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quizId: quiz.id, limit: amount }),
+      })
+      const payload = await res.json().catch(() => ({}))
+      if (!res.ok || !payload?.ok) {
+        throw new Error(payload?.error || 'Nie udało się wylosować pytań historycznych.')
+      }
+      toast({ title: `Dodano ${payload.inserted ?? amount} pytań historycznych` })
+      await loadQuestions()
+    } catch (err: any) {
+      toast({ title: 'Błąd losowania', description: err?.message ?? '', variant: 'destructive' as any })
+    } finally {
+      setHistoryAutoLoading(false)
+    }
   }
 
   function startEdit(q:any) {
@@ -340,6 +403,9 @@ export default function AdminQuizDetailsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-headline font-extrabold uppercase">Quiz: {quiz.title}</h1>
         <div className="flex items-center gap-2">
+          <Button variant="secondary" onClick={settleQuizScores} disabled={settling}>
+            {settling ? 'Rozliczam…' : 'Przelicz wyniki'}
+          </Button>
           <Button variant="outline" onClick={saveBasics} disabled={saving}>Zapisz</Button>
           <Button onClick={togglePublish} disabled={saving}>
             {round.status === 'published' ? 'Wycofaj publikację' : 'Opublikuj'}
@@ -367,6 +433,53 @@ export default function AdminQuizDetailsPage() {
 
       <Card>
         <CardHeader>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <CardTitle>Bonusy i pule nagród</CardTitle>
+              <CardDescription>Zarządzanie bonusami przeniesiono do zakładki „Bonusy”.</CardDescription>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={()=>router.push(`/admin/bonuses?quiz=${quiz.id}`)}
+            >
+              Otwórz bonusy
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between text-xs text-muted-foreground">
+            <span>
+              Liczba progów: <span className="font-semibold text-white">{prizeBrackets.length}</span>
+            </span>
+            <span>
+              Suma pul: <span className="font-semibold text-white">{prizeBracketsTotal.toLocaleString('pl-PL')} zł</span>
+            </span>
+            {prize ? (
+              <span>
+                Pula wiktoryny: <span className="font-semibold text-white">{Number(prize || 0).toLocaleString('pl-PL')} zł</span>
+              </span>
+            ) : null}
+          </div>
+          {prizeBrackets.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-border/60 px-3 py-4 text-sm text-muted-foreground">
+              Bonusy dla tej wiktoryny nie zostały jeszcze skonfigurowane. Przejdź do zakładki „Bonusy”, aby dodać progi.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {prizeBrackets.map((row) => (
+                <div key={row.id} className="flex items-center justify-between rounded-lg bg-muted/20 px-3 py-2 text-sm">
+                  <span className="text-muted-foreground">≥ {row.correct} poprawnych odpowiedzi</span>
+                  <span className="font-semibold text-white">{row.pool.toLocaleString('pl-PL')} zł</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <div className="flex items-center justify-between gap-2">
             <div>
               <CardTitle>Pytania</CardTitle>
@@ -385,13 +498,22 @@ export default function AdminQuizDetailsPage() {
                 </span>
               </div>
             </div>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={()=>setShowAddForm((v)=>!v)}
-            >
-              {showAddForm ? 'Ukryj formularz' : 'Dodaj pytanie ręcznie'}
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                onClick={()=>autoFillHistoryQuestions()}
+                disabled={historyAutoLoading}
+              >
+                {historyAutoLoading ? 'Losuję…' : 'Losuj historię'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={()=>setShowAddForm((v)=>!v)}
+              >
+                {showAddForm ? 'Ukryj formularz' : 'Dodaj pytanie ręcznie'}
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-5">

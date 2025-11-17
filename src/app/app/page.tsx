@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowRight, BrainCircuit, CalendarDays, CheckCircle2, Clock } from "lucide-react";
+import { ArrowRight, BrainCircuit, CalendarDays, CheckCircle2, Clock, Info } from "lucide-react";
 import Image from 'next/image'
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
@@ -21,13 +21,6 @@ export default async function AppDashboard() {
   )
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) redirect('/?auth=login')
-  // Load a few active quizzes for the dashboard
-  const { data: active } = await supabase
-    .from('rounds')
-    .select('id,label,deadline_at,leagues(name,code),quizzes(*)')
-    .eq('status','published')
-    .order('deadline_at',{ ascending: true })
-    .limit(5)
   return (
     <div className="mx-auto w-full max-w-[1200px] space-y-6">
       {/* Nagłówek i szybkie akcje */}
@@ -157,31 +150,6 @@ export default async function AppDashboard() {
       </div>
 
       {/* Active quizzes */}
-      {Array.isArray(active) && active.length > 0 && (
-        <div className="grid grid-cols-1 gap-4">
-          <Card className="shadow-xl shadow-black/10">
-            <CardHeader>
-              <CardTitle>Aktywne wiktoryny</CardTitle>
-              <CardDescription>Dołącz zanim upłynie termin</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {active.map((r:any) => (
-                <div key={r.id} className="flex items-center justify-between rounded-lg bg-card px-4 py-3 shadow-md shadow-black/10">
-                  <div>
-                    <div className="font-medium">{r.leagues?.name} — {r.label}</div>
-                    <div className="text-xs text-muted-foreground">Do: {new Date(r.deadline_at).toLocaleString('pl-PL')}</div>
-                  </div>
-                  {r.quizzes?.[0] && (
-                    <Button asChild size="sm">
-                      <Link href={`/app/quizzes/${r.quizzes[0].id}`}>Otwórz</Link>
-                    </Button>
-                  )}
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </div>
-      )}
     </div>
   )
 }

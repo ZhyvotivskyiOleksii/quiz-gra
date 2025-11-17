@@ -1,118 +1,211 @@
-const DEFAULT_API_KEY = '123'
-const BASE_URL = 'https://www.thesportsdb.com/api/v1/json'
+const BASE_URL = 'https://gateway.score-buster.dev.royal-gambit.io'
 
-export type TheSportsDbEvent = {
-  idEvent: string
-  strHomeTeam: string | null
-  strAwayTeam: string | null
-  strHomeTeamBadge?: string | null
-  strAwayTeamBadge?: string | null
-  intHomeScore?: string | null
-  intAwayScore?: string | null
-  strTimestamp?: string | null
-  dateEvent?: string | null
-  strTime?: string | null
-  strLeague?: string | null
+type RawTeam = {
+  id?: string | number | null
+  name?: string | null
+  score?: number | string | null
 }
 
-export type TheSportsDbSeason = {
-  strSeason?: string | null
+type RawMatch = {
+  id?: string | number | null
+  date?: string | null
+  homeTeam?: RawTeam | null
+  awayTeam?: RawTeam | null
 }
 
-// Map our league names/codes to TheSportsDB league IDs
+type RawRound = {
+  round?: string | null
+  matches?: RawMatch[] | null
+}
+
+type RawMatchesResponse = {
+  rounds?: RawRound[] | null
+}
+
+export type ScoreBusterTeam = {
+  id: string
+  name: string
+  score?: number | null
+}
+
+export type ScoreBusterMatch = {
+  id: string
+  leagueId: string
+  round?: string | null
+  kickoff: string
+  homeTeam: ScoreBusterTeam
+  awayTeam: ScoreBusterTeam
+}
+
+export type ScoreBusterStanding = {
+  team: ScoreBusterTeam
+  divisionMember: unknown[]
+  overall: StandingSplit
+  home: StandingSplit
+  away: StandingSplit
+}
+
+type StandingSplit = {
+  rank: number
+  pointsScored: number
+  pointsLost: number
+  gamesLost: number
+  gamesDraws: number
+  gamesPlayed: number
+  gamesWins: number
+  points: number
+  percentageWins: number
+}
+
+async function fetchJson<T>(
+  path: string,
+  query?: Record<string, string | number | undefined>,
+): Promise<T> {
+  const url = new URL(path, BASE_URL)
+  Object.entries(query || {}).forEach(([key, value]) => {
+    if (typeof value === 'undefined' || value === null) return
+    url.searchParams.set(key, String(value))
+  })
+  const res = await fetch(url.toString())
+  if (!res.ok) {
+    throw new Error(`ScoreBuster API error ${res.status}`)
+  }
+  return (await res.json()) as T
+}
+
+function toScore(value?: number | string | null): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim() !== '') {
+    const num = Number(value)
+    if (Number.isFinite(num)) return num
+  }
+  return null
+}
+
+function normalizeTeam(raw?: RawTeam | null): ScoreBusterTeam | null {
+  if (!raw?.name) return null
+  const id =
+    typeof raw.id === 'number' || typeof raw.id === 'string'
+      ? String(raw.id)
+      : raw.name
+  return {
+    id,
+    name: raw.name,
+    score: toScore(raw.score),
+  }
+}
+
+function normalizeMatches(
+  payload: RawMatchesResponse | undefined,
+  leagueId: string,
+): ScoreBusterMatch[] {
+  const rounds = payload?.rounds || []
+  const normalized: ScoreBusterMatch[] = []
+  for (const round of rounds) {
+    const matches = round?.matches || []
+    for (const match of matches) {
+      const id =
+        typeof match?.id === 'number' || typeof match?.id === 'string'
+          ? String(match.id)
+          : null
+      const kickoff = match?.date || null
+      const home = normalizeTeam(match?.homeTeam)
+      const away = normalizeTeam(match?.awayTeam)
+      if (!id || !kickoff || !home || !away) continue
+      normalized.push({
+        id,
+        leagueId,
+        round: round?.round ?? null,
+        kickoff,
+        homeTeam: home,
+        awayTeam: away,
+      })
+    }
+  }
+  return normalized
+}
+
+export async function fetchLeagueFixtures(
+  leagueId: string,
+): Promise<ScoreBusterMatch[]> {
+  const payload = await fetchJson<RawMatchesResponse>(
+    `/api/score/events/${leagueId}/fixtures`,
+  )
+  return normalizeMatches(payload, leagueId)
+}
+
+export async function fetchLeagueResults(
+  leagueId: string,
+): Promise<ScoreBusterMatch[]> {
+  const payload = await fetchJson<RawMatchesResponse>(
+    `/api/score/events/${leagueId}/results`,
+  )
+  return normalizeMatches(payload, leagueId)
+}
+
+type RawStandingsResponse = {
+  ranking?: ScoreBusterStanding[] | null
+}
+
+export async function fetchLeagueStandings(
+  leagueId: string,
+  sportId = '1',
+): Promise<ScoreBusterStanding[]> {
+  const payload = await fetchJson<RawStandingsResponse>(
+    `/api/score/leagues/${leagueId}/standings`,
+    { sportId },
+  )
+  return (payload?.ranking || []) as ScoreBusterStanding[]
+}
+
 const LEAGUE_ID_MAP: Record<string, string> = {
-  // Names used in UI / DB
-  Bundesliga: '4331',
-  Ekstraklasa: '4422',
-  'La Liga': '4335',
-  'Liga Mistrzów': '4480',
-  'Champions League': '4480',
-  'Premier League': '4328',
-  'English Premier League': '4328',
-  'Serie A': '4332',
-  // Short codes (if you store codes in DB)
-  BL: '4331',
-  EKS: '4422',
-  LL: '4335',
-  CL: '4480',
-  EPL: '4328',
-  SA: '4332',
+  ekstraklasa: '899985',
+  'pko ekstraklasa': '899985',
+  'pko bp ekstraklasa': '899985',
+  eks: '899985',
+  'eks-pl': '899985',
+  bundesliga: '899867',
+  '1. bundesliga': '899867',
+  bl: '899867',
+  'la liga': '901074',
+  laliga: '901074',
+  ll: '901074',
+  'liga mistrzów': '904988',
+  'liga mistrzow': '904988',
+  'champions league': '904988',
+  'cl-league': '904988',
+  'liga mistrzów faza 2': '904995',
+  'champions league playoff': '904995',
+  'liga mistrzów - play-off': '904995',
+  'premier league': '900326',
+  'english premier league': '900326',
+  epl: '900326',
+  'serie a': '899984',
+  sa: '899984',
 }
 
-export function mapLeagueToApiId(name?: string | null, code?: string | null): string | null {
-  const keyCandidates = [
-    (name || '').trim(),
-    (code || '').trim(),
-  ].filter(Boolean) as string[]
-
-  for (const k of keyCandidates) {
-    const id = LEAGUE_ID_MAP[k]
+export function mapLeagueToApiId(
+  name?: string | null,
+  code?: string | null,
+): string | null {
+  const candidates = [name, code]
+    .map((value) => (value || '').trim().toLowerCase())
+    .filter(Boolean)
+  for (const candidate of candidates) {
+    const id = LEAGUE_ID_MAP[candidate]
     if (id) return id
   }
   return null
 }
 
-function getApiKey() {
-  // Allow overriding via env, fallback to demo key from docs
-  if (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_THESPORTSDB_API_KEY) {
-    return process.env.NEXT_PUBLIC_THESPORTSDB_API_KEY
-  }
-  return DEFAULT_API_KEY
-}
-
-async function callEndpoint(path: string): Promise<TheSportsDbEvent[]> {
-  const apiKey = getApiKey()
-  const url = `${BASE_URL}/${apiKey}/${path}`
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`TheSportsDB error ${res.status}`)
-  const json = await res.json()
-  const events = (json?.events || []) as TheSportsDbEvent[]
-  return events.filter((e) => e && e.idEvent && e.strHomeTeam && e.strAwayTeam)
-}
-
-async function callSeasonsEndpoint(path: string): Promise<TheSportsDbSeason[]> {
-  const apiKey = getApiKey()
-  const url = `${BASE_URL}/${apiKey}/${path}`
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`TheSportsDB error ${res.status}`)
-  const json = await res.json()
-  return (json?.seasons || []) as TheSportsDbSeason[]
-}
-
-export async function fetchNextEvents(leagueApiId: string): Promise<TheSportsDbEvent[]> {
-  return callEndpoint(`eventsnextleague.php?id=${encodeURIComponent(leagueApiId)}`)
-}
-
-export async function fetchPastEvents(leagueApiId: string): Promise<TheSportsDbEvent[]> {
-  return callEndpoint(`eventspastleague.php?id=${encodeURIComponent(leagueApiId)}`)
-}
-
-export async function fetchSeasonEvents(leagueApiId: string, season: string): Promise<TheSportsDbEvent[]> {
-  return callEndpoint(`eventsseason.php?id=${encodeURIComponent(leagueApiId)}&s=${encodeURIComponent(season)}`)
-}
-
-export async function fetchLeagueSeasons(leagueApiId: string): Promise<TheSportsDbSeason[]> {
-  return callSeasonsEndpoint(`search_all_seasons.php?id=${encodeURIComponent(leagueApiId)}`)
-}
-
-export function toTinyBadge(url?: string | null): string | null {
-  if (!url) return null
-  if (url.includes('/tiny')) return url
-  // TheSportsDB uses ...png/<size>, append /tiny when missing.
-  if (url.endsWith('.png') || url.endsWith('.jpg') || url.endsWith('.jpeg') || url.endsWith('.webp')) {
-    return `${url}/tiny`
-  }
-  return url
-}
-
-// Fetch single team badge by name (used on play screen)
-export async function fetchTeamBadge(teamName: string): Promise<string | null> {
-  if (!teamName) return null
-  const apiKey = getApiKey()
-  const url = `${BASE_URL}/${apiKey}/searchteams.php?t=${encodeURIComponent(teamName)}`
-  const res = await fetch(url)
-  if (!res.ok) return null
-  const json = await res.json().catch(() => null as any)
-  const badge = json?.teams?.[0]?.strBadge as string | undefined
-  return badge ? toTinyBadge(badge) : null
+export function getTeamLogoUrl(
+  teamId?: string | number | null,
+  size: 'small' | 'medium' = 'small',
+): string | null {
+  if (teamId === null || typeof teamId === 'undefined') return null
+  const id = String(teamId).trim()
+  if (!id) return null
+  return `${BASE_URL}/api/images/teams/${encodeURIComponent(
+    id,
+  )}/logo?size=${size}`
 }

@@ -1,10 +1,10 @@
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import Link from 'next/link'
 import Image from 'next/image'
 import { Timer, ChevronRight, PenSquare } from 'lucide-react'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
+import BonusInfoPanel, { BonusQuizSummary } from '@/components/app/bonus-info-panel'
 
 export default async function PlayPage() {
   // Load published quizzes for this view
@@ -56,6 +56,38 @@ export default async function PlayPage() {
     .map((r:any) => r.quizzes?.[0]?.id)
     .filter((id: string | undefined): id is string => Boolean(id))
 
+  let prizeMap: Record<string, { correct_answers: number; pool: number }[]> = {}
+  if (quizIds.length) {
+    const { data: brackets } = await supabase
+      .from('quiz_prize_brackets')
+      .select('quiz_id,correct_answers,pool')
+      .in('quiz_id', quizIds)
+    prizeMap = (brackets || []).reduce((acc: Record<string, { correct_answers: number; pool: number }[]>, row) => {
+      if (!row.quiz_id) return acc
+      acc[row.quiz_id] = acc[row.quiz_id] || []
+      acc[row.quiz_id].push({
+        correct_answers: row.correct_answers ?? 0,
+        pool: row.pool ?? 0,
+      })
+      acc[row.quiz_id].sort((a, b) => a.correct_answers - b.correct_answers)
+      return acc
+    }, {})
+  }
+
+  const quizSummaries: BonusQuizSummary[] = items
+    .map((r: any) => {
+      const quiz = r.quizzes?.[0]
+      if (!quiz?.id) return null
+      return {
+        quizId: quiz.id,
+        title: quiz.title || r.leagues?.name || 'Wiktoryna',
+        label: r.label,
+        prize: quiz.prize || 0,
+        brackets: prizeMap[quiz.id] || [],
+      }
+    })
+    .filter(Boolean) as BonusQuizSummary[]
+
   const submissionMap: Record<string, { submitted_at: string | null }> = {}
   if (user && quizIds.length) {
     const { data: submissions } = await supabase
@@ -95,8 +127,8 @@ export default async function PlayPage() {
 
       {/* Dyn. quizzes published by admins */}
       {items.length > 0 && (
-        <div className="relative z-10 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div className="relative z-10 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.8fr),minmax(360px,1fr)]">
+          <div className="space-y-4 lg:pr-2 max-w-[860px]">
             {items.map((r:any) => {
               const q = r.quizzes?.[0] || {}
               const img = q.image_url || '/images/preview.webp'
@@ -167,6 +199,11 @@ export default async function PlayPage() {
               )
             })}
           </div>
+          {quizSummaries.length > 0 && (
+            <div className="lg:sticky lg:top-20">
+              <BonusInfoPanel quizzes={quizSummaries} />
+            </div>
+          )}
         </div>
       )}
     </div>

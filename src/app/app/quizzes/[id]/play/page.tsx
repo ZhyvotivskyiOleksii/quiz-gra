@@ -2,9 +2,9 @@
 import * as React from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { getSupabase } from '@/lib/supabaseClient'
-import { fetchTeamBadge } from '@/lib/footballApi'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { getTeamLogoUrl } from '@/lib/footballApi'
 
 type Q = {
   id: string
@@ -21,15 +21,27 @@ export default function QuizPlayPage() {
   const [loading, setLoading] = React.useState(true)
   const [title, setTitle] = React.useState<string>('')
   const [deadline, setDeadline] = React.useState<string | null>(null)
+  const [roundLabel, setRoundLabel] = React.useState<string | null>(null)
   const [questions, setQuestions] = React.useState<Q[]>([])
   const [step, setStep] = React.useState(0)
   const [answers, setAnswers] = React.useState<Record<string, any>>({})
   const [matchMap, setMatchMap] = React.useState<Record<string, any>>({})
-  const [teamBadges, setTeamBadges] = React.useState<Record<string, string>>({})
   const [submitting, setSubmitting] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
   const total = questions.length
+  const currentStep = total > 0 ? Math.min(step, total - 1) : 0
+  const q = total > 0 ? questions[currentStep] : null
+  const value = q ? answers[q.id] : undefined
+  const match = q?.match_id ? matchMap[q.match_id] : null
+  const matchRoundLabel = match?.round_label ?? roundLabel ?? null
+  const homeName = match?.home_team ?? ''
+  const awayName = match?.away_team ?? ''
+  const homeBadge = match?.home_team_external_id ? getTeamLogoUrl(match.home_team_external_id) : null
+  const awayBadge = match?.away_team_external_id ? getTeamLogoUrl(match.away_team_external_id) : null
+  const homeInitials = getInitials(homeName)
+  const awayInitials = getInitials(awayName)
+  const isAnswered = q ? isQuestionAnswered(q.kind, value) : false
 
   React.useEffect(() => {
     setLoading(true)
@@ -54,17 +66,18 @@ export default function QuizPlayPage() {
         if (qz?.round_id) {
           const { data: r, error: roundErr } = await s
             .from('rounds')
-            .select('id,deadline_at')
+            .select('id,deadline_at,label')
             .eq('id', qz.round_id)
             .maybeSingle()
           if (roundErr) throw roundErr
 
           setDeadline(r?.deadline_at ?? null)
+          setRoundLabel((r as any)?.label ?? null)
 
           if (r?.id) {
             const { data: ms, error: matchErr } = await s
               .from('matches')
-              .select('id,home_team,away_team,kickoff_at')
+              .select('id,home_team,away_team,kickoff_at,home_team_external_id,away_team_external_id,round_label')
               .eq('round_id', r.id)
             if (matchErr) throw matchErr
 
@@ -115,38 +128,6 @@ export default function QuizPlayPage() {
     })()
   }, [id])
 
-  // Load team badges for all matches (TheSportsDB searchteams.php)
-  React.useEffect(() => {
-    const teams = new Set<string>()
-    Object.values(matchMap).forEach((m: any) => {
-      if (m?.home_team) teams.add(m.home_team)
-      if (m?.away_team) teams.add(m.away_team)
-    })
-    const missing = Array.from(teams).filter(
-      name => name && !teamBadges[name],
-    )
-    if (missing.length === 0) return
-
-    ;(async () => {
-      const entries = await Promise.all(
-        missing.map(async name => {
-          try {
-            const badge = await fetchTeamBadge(name)
-            return [name, badge || ''] as const
-          } catch {
-            return [name, ''] as const
-          }
-        }),
-      )
-      setTeamBadges(prev => {
-        const next = { ...prev }
-        for (const [name, badge] of entries) {
-          if (badge && !next[name]) next[name] = badge
-        }
-        return next
-      })
-    })()
-  }, [matchMap, teamBadges])
 
   function choose(questionId: string, value: any) {
     setAnswers(prev => ({ ...prev, [questionId]: value }))
@@ -212,58 +193,6 @@ export default function QuizPlayPage() {
     }
   }
 
-  if (loading)
-    return (
-      <div className="min-h-[60vh] grid place-items-center text-white">
-        Ładowanie…
-      </div>
-    )
-
-  if (error)
-    return (
-      <div className="min-h-[60vh] grid place-items-center text-center text-white gap-4">
-        <div>{error}</div>
-        <Button onClick={() => router.refresh()}>Spróbuj ponownie</Button>
-      </div>
-    )
-
-  if (!total)
-    return (
-      <div className="min-h-[60vh] grid place-items-center text-white">
-        Brak pytań dla tej wiktoryny.
-      </div>
-    )
-
-  const q = questions[step]
-  const value = answers[q.id]
-  const match = q.match_id ? matchMap[q.match_id] : null
-  const isFuture = q.kind === 'future_1x2' || q.kind === 'future_score'
-  const homeName = match?.home_team || ''
-  const awayName = match?.away_team || ''
-  const homeBadge =
-    homeName && teamBadges[homeName] ? teamBadges[homeName] : null
-  const awayBadge =
-    awayName && teamBadges[awayName] ? teamBadges[awayName] : null
-
-  const makeInitials = (name: string) => {
-    if (!name) return ''
-    const parts = name.split(' ').filter(Boolean)
-    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
-    return (parts[0][0] + parts[1][0]).toUpperCase()
-  }
-  const homeInitials = makeInitials(homeName)
-  const awayInitials = makeInitials(awayName)
-  const isAnswered =
-    q.kind === 'future_score'
-      ? Boolean(
-          value &&
-            typeof value.home === 'number' &&
-            typeof value.away === 'number',
-        )
-      : q.kind === 'history_numeric'
-        ? typeof value === 'number'
-        : typeof value !== 'undefined' && value !== null
-
   return (
     <div className="relative min-h-[calc(100vh-64px)] w-full overflow-hidden bg-background">
       <div aria-hidden className="pointer-events-none absolute inset-0">
@@ -272,142 +201,144 @@ export default function QuizPlayPage() {
       </div>
       <div className="relative z-10 mx-auto flex min-h-[calc(100vh-64px)] items-start justify-center px-4 pt-6 pb-6 text-white sm:px-6 sm:pt-10 md:px-8">
         <div className="w-full max-w-[900px]">
-          {/* header / title with team badges for future questions */}
           <div className="mx-auto mb-5 w-full max-w-[640px] rounded-[26px] border border-white/10 bg-[rgba(16,18,34,0.9)] px-4 py-4 shadow-[0_25px_60px_rgba(5,5,10,0.65)] sm:mb-6 sm:px-8 sm:py-5">
             <div className="text-center">
-              <div className="font-headline tracking-wider text-lg uppercase">
-                {title || 'Wiktoryna'}
-              </div>
+              <div className="font-headline tracking-wider text-lg uppercase">{title || 'Wiktoryna'}</div>
+              {roundLabel && <div className="mt-1 text-sm uppercase tracking-wide text-white/80">{roundLabel}</div>}
               {deadline && (
-                <div className="opacity-80 text-sm mt-1">
-                  Do: {new Date(deadline).toLocaleString('pl-PL')}
-                </div>
+                <div className="mt-1 text-sm opacity-80">Do: {new Date(deadline).toLocaleString('pl-PL')}</div>
               )}
             </div>
           </div>
 
-          {/* Pasek postępu w formie segmentów + licznik pytania */}
-          {total > 0 && (
-            <div className="mb-4 sm:mb-5">
-              <div className="mb-1 flex justify-center gap-1.5 sm:gap-2">
-                {Array.from({ length: Math.min(total, 10) }).map((_, idx) => {
-                  const segmentCount = Math.min(total, 10)
-                  const activeIndex =
-                    segmentCount === 1
-                      ? 0
-                      : Math.round(
-                          (step / Math.max(total - 1, 1)) *
-                            (segmentCount - 1),
-                        )
-                  const isDone = idx < activeIndex
-                  const isActive = idx === activeIndex
-                  const base =
-                    'h-[3px] rounded-full transition-colors duration-200 w-7 sm:w-9 md:w-10'
-                  const tone = isActive
-                    ? 'bg-[hsl(var(--accent))]'
-                    : isDone
-                      ? 'bg-white/30'
-                      : 'bg-white/10'
-                  return <div key={idx} className={`${base} ${tone}`} />
-                })}
-              </div>
-              <div className="text-center opacity-90 text-sm sm:text-base">
-                Pytanie {step + 1} z {total}
-              </div>
+          {loading && (
+            <div className="mx-auto flex max-w-[640px] flex-col items-center gap-3 rounded-[22px] border border-white/5 bg-white/5 px-6 py-10 text-center text-white/80">
+              <div className="h-12 w-12 animate-spin rounded-full border-4 border-white/10 border-t-white/60" />
+              <p className="text-sm uppercase tracking-[0.4em]">Ładujemy pytania…</p>
             </div>
           )}
 
-          {(q.kind === 'future_1x2' || q.kind === 'future_score') && match && (
-            <div className="mx-auto mb-5 flex max-w-[720px] flex-col gap-4 rounded-[32px] border border-white/10 bg-[rgba(10,12,24,0.82)] px-4 py-5 text-center shadow-[0_25px_60px_rgba(4,5,13,0.65)] sm:px-6">
-              <div className="flex w-full items-center justify-between gap-2 sm:gap-6">
-                <TeamBadgeVisual label={homeName} badge={homeBadge} fallback={homeInitials} />
-                <div className="flex flex-col items-center gap-1 text-white">
-                  <div className="text-2xl font-extrabold tracking-[0.35em] text-white sm:text-3xl">
-                    VS
+          {!loading && error && (
+            <div className="mx-auto max-w-[640px] rounded-[22px] border border-red-500/30 bg-red-500/10 px-6 py-6 text-center text-sm text-red-100">
+              {error}
+            </div>
+          )}
+
+          {!loading && !error && !q && (
+            <div className="mx-auto max-w-[640px] rounded-[22px] border border-white/10 bg-white/5 px-6 py-6 text-center text-sm text-white/80">
+              Ten quiz nie ma jeszcze pytań. Wróć później.
+            </div>
+          )}
+
+          {!loading && !error && q && (
+            <>
+              {total > 0 && (
+                <div className="mb-4 sm:mb-5">
+                  <div className="mb-1 flex justify-center gap-1.5 sm:gap-2">
+                    {Array.from({ length: Math.min(total, 10) }).map((_, idx) => {
+                      const segmentCount = Math.min(total, 10)
+                      const activeIndex =
+                        segmentCount === 1
+                          ? 0
+                          : Math.round((currentStep / Math.max(total - 1, 1)) * (segmentCount - 1))
+                      const isDone = idx < activeIndex
+                      const isActive = idx === activeIndex
+                      const base = 'h-[3px] rounded-full transition-colors duration-200 w-7 sm:w-9 md:w-10'
+                      const tone = isActive ? 'bg-[hsl(var(--accent))]' : isDone ? 'bg-white/30' : 'bg-white/10'
+                      return <div key={idx} className={`${base} ${tone}`} />
+                    })}
                   </div>
-                  {match.kickoff_at && (
-                    <div className="rounded-full border border-white/10 px-3 py-1 text-xs uppercase tracking-widest text-white/80">
-                      {new Date(match.kickoff_at).toLocaleString('pl-PL')}
-                    </div>
-                  )}
+                  <div className="text-center text-sm opacity-90 sm:text-base">
+                    Pytanie {currentStep + 1} z {total}
+                  </div>
                 </div>
-                <TeamBadgeVisual label={awayName} badge={awayBadge} fallback={awayInitials} />
-              </div>
-            </div>
-          )}
+              )}
 
-          <h2 className="text-center font-headline font-extrabold text-2xl sm:text-3xl md:text-4xl mb-5 sm:mb-6 drop-shadow">
-            {q.prompt}
-          </h2>
+              {(q.kind === 'future_1x2' || q.kind === 'future_score') && match && (
+                <div className="mx-auto mb-5 flex max-w-[720px] flex-col gap-4 rounded-[32px] border border-white/10 bg-[rgba(10,12,24,0.82)] px-4 py-5 text-center shadow-[0_25px_60px_rgba(4,5,13,0.65)] sm:px-6">
+                  <div className="flex w-full items-center justify-between gap-2 sm:gap-6">
+                    <TeamBadgeVisual label={homeName} badge={homeBadge} fallback={homeInitials} />
+                    <div className="flex flex-col items-center gap-1 text-white">
+                      <div className="text-2xl font-extrabold tracking-[0.35em] text-white sm:text-3xl">VS</div>
+                      {matchRoundLabel && (
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.35em] text-white/80">
+                          {matchRoundLabel}
+                        </div>
+                      )}
+                      {match.kickoff_at && (
+                        <div className="rounded-full border border-white/10 px-3 py-1 text-xs uppercase tracking-widest text-white/80">
+                          {new Date(match.kickoff_at).toLocaleString('pl-PL')}
+                        </div>
+                      )}
+                    </div>
+                    <TeamBadgeVisual label={awayName} badge={awayBadge} fallback={awayInitials} />
+                  </div>
+                </div>
+              )}
 
-          {/* Render by type */}
-          {Array.isArray(q.options) || q.kind === 'future_1x2' ? (
-            <div className="mx-auto max-w-[720px] flex flex-wrap justify-center gap-3 sm:gap-4">
-              {(Array.isArray(q.options) ? q.options : ['1', 'X', '2']).map((opt: any, idx: number) => (
-                <button
-                  key={idx}
-                  onClick={() => choose(q.id, opt)}
-                  className={cn(
-                    'group relative flex-1 min-w-[140px] rounded-2xl border border-white/10 px-4 py-3 text-center font-semibold uppercase tracking-wide transition-all duration-200',
-                    value === opt
-                      ? 'bg-[linear-gradient(135deg,rgba(255,102,51,0.95),rgba(187,155,255,0.9))] text-slate-950 shadow-[0_18px_45px_rgba(255,102,51,0.45)]'
-                      : 'bg-[rgba(13,16,28,0.85)] text-white/85 hover:border-white/30 hover:bg-[rgba(22,25,40,0.95)]'
-                  )}
+              <h2 className="text-center font-headline text-2xl font-extrabold drop-shadow sm:text-3xl md:text-4xl">
+                {q.prompt}
+              </h2>
+
+              {Array.isArray(q.options) || q.kind === 'future_1x2' ? (
+                <div className="mx-auto flex max-w-[720px] flex-wrap justify-center gap-3 sm:gap-4">
+                  {(Array.isArray(q.options) ? q.options : ['1', 'X', '2']).map((opt: any, idx: number) => (
+                    <button
+                      key={`${q.id}-${idx}`}
+                      onClick={() => choose(q.id, opt)}
+                      className={cn(
+                        'group relative min-w-[140px] flex-1 rounded-2xl border border-white/10 px-4 py-3 text-center font-semibold uppercase tracking-wide transition-all duration-200',
+                        value === opt
+                          ? 'bg-[linear-gradient(135deg,rgba(255,102,51,0.95),rgba(187,155,255,0.9))] text-slate-950 shadow-[0_18px_45px_rgba(255,102,51,0.45)]'
+                          : 'bg-[rgba(13,16,28,0.85)] text-white/85 hover:border-white/30 hover:bg-[rgba(22,25,40,0.95)]',
+                      )}
+                    >
+                      {typeof opt === 'string' ? opt : JSON.stringify(opt)}
+                    </button>
+                  ))}
+                </div>
+              ) : q.kind === 'future_score' ? (
+                <ScorePicker value={value as any} onChange={(v: any) => choose(q.id, v)} options={q.options as any} />
+              ) : q.kind === 'history_numeric' ? (
+                <NumericPicker value={value as number} onChange={(v: number) => choose(q.id, v)} options={q.options as any} />
+              ) : (
+                <div className="text-center text-sm text-white/70">Nieobsługiwany тип pytania</div>
+              )}
+
+              <div className="mx-auto mt-6 flex max-w-[700px] items-center justify-between gap-3 sm:mt-7">
+                <Button
+                  variant="secondary"
+                  className="rounded-full px-6 shadow-[0_12px_35px_rgba(4,5,15,0.55)]"
+                  disabled={currentStep === 0}
+                  onClick={() => setStep(s => Math.max(0, s - 1))}
                 >
-                  {typeof opt === 'string' ? opt : JSON.stringify(opt)}
-                </button>
-              ))}
-            </div>
-          ) : q.kind === 'future_score' ? (
-            <ScorePicker
-              value={value as any}
-              onChange={(v: any) => choose(q.id, v)}
-              options={q.options as any}
-            />
-          ) : q.kind === 'history_numeric' ? (
-            <NumericPicker
-              value={value as number}
-              onChange={(v: number) => choose(q.id, v)}
-              options={q.options as any}
-            />
-          ) : (
-            <div className="text-center opacity-80">
-              Nieobsługiwany typ pytania
-            </div>
+                  Poprzednie
+                </Button>
+                {currentStep < total - 1 ? (
+                  <Button
+                    className="rounded-full px-8 shadow-[0_22px_50px_rgba(255,102,51,0.45)]"
+                    onClick={() => setStep(s => Math.min(total - 1, s + 1))}
+                    disabled={!isAnswered || submitting}
+                  >
+                    Następne
+                  </Button>
+                ) : (
+                  <Button
+                    className="rounded-full px-8 shadow-[0_22px_50px_rgba(255,102,51,0.45)]"
+                    onClick={submit}
+                    disabled={!isAnswered || submitting}
+                  >
+                    {submitting ? 'Wysyłanie…' : 'Prześlij'}
+                  </Button>
+                )}
+              </div>
+            </>
           )}
-
-          <div className="mt-6 sm:mt-7 flex items-center justify-between gap-3 max-w-[700px] mx-auto">
-            <Button
-              variant="secondary"
-              className="rounded-full px-6 shadow-[0_12px_35px_rgba(4,5,15,0.55)]"
-              disabled={step === 0}
-              onClick={() => setStep(s => Math.max(0, s - 1))}
-            >
-              Poprzednie
-            </Button>
-            {step < total - 1 ? (
-              <Button
-                className="rounded-full px-8 shadow-[0_22px_50px_rgba(255,102,51,0.45)]"
-                onClick={() => setStep(s => Math.min(total - 1, s + 1))}
-                disabled={!isAnswered || submitting}
-              >
-                Następne
-              </Button>
-            ) : (
-              <Button
-                className="rounded-full px-8 shadow-[0_22px_50px_rgba(255,102,51,0.45)]"
-                onClick={submit}
-                disabled={!isAnswered || submitting}
-              >
-                {submitting ? 'Wysyłanie…' : 'Prześlij'}
-              </Button>
-            )}
-          </div>
         </div>
       </div>
     </div>
   )
-}
+
 
 function NumericPicker({
   value,
@@ -545,4 +476,28 @@ function TeamBadgeVisual({ label, badge, fallback }: { label: string; badge: str
       </div>
     </div>
   )
+}
+
+function getInitials(label?: string) {
+  if (!label) return '??'
+  const parts = label
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(part => part[0]?.toUpperCase() ?? '')
+    .join('')
+  const condensed = parts || label.slice(0, 2).toUpperCase()
+  return condensed.slice(0, 3) || '??'
+}
+
+function isQuestionAnswered(kind: string, value: any) {
+  if (value === null || typeof value === 'undefined') return false
+  if (kind === 'future_score') {
+    return typeof value?.home === 'number' && typeof value?.away === 'number'
+  }
+  if (kind === 'history_numeric') {
+    return typeof value === 'number'
+  }
+  if (Array.isArray(value)) return value.length > 0
+  if (typeof value === 'object') return Object.keys(value).length > 0
+  return String(value).trim() !== ''
 }

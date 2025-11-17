@@ -2,7 +2,7 @@
 
 import { Logo } from '@/components/shared/logo';
 // No i18n now: Polish only
-import { User, Settings as SettingsIcon, History as HistoryIcon, Shield, LogOut as LogOutIcon } from 'lucide-react';
+import { User, Settings as SettingsIcon, History as HistoryIcon, Shield, LogOut as LogOutIcon, CircleDollarSign } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { LoginForm } from '../auth/login-form';
 import { RegisterForm } from '../auth/register-form';
@@ -25,6 +25,27 @@ export function Header() {
   const [isAdmin, setIsAdmin] = React.useState(false)
   const [displayName, setDisplayName] = React.useState<string | undefined>(undefined)
   const [shortId, setShortId] = React.useState<string | undefined>(undefined)
+  const [walletBalance, setWalletBalance] = React.useState<number | null>(null)
+  const formattedBalance = React.useMemo(() => {
+    if (walletBalance === null) return null
+    return formatCurrency(walletBalance)
+  }, [walletBalance])
+
+  const fetchBalance = React.useCallback(async (supabaseClient: ReturnType<typeof getSupabase>) => {
+    try {
+      const { data } = await supabaseClient.rpc('get_user_balance')
+      if (typeof data === 'number') {
+        setWalletBalance(data)
+      } else if (data === null || data === undefined) {
+        setWalletBalance(0)
+      } else {
+        const parsed = Number(data)
+        setWalletBalance(Number.isFinite(parsed) ? parsed : 0)
+      }
+    } catch {
+      setWalletBalance(null)
+    }
+  }, [])
 
   React.useEffect(() => {
     (async () => {
@@ -60,6 +81,7 @@ export function Header() {
           const { data: sid } = await supabase.rpc('get_or_create_short_id')
           if (sid) setShortId(String(sid))
         } catch {}
+        await fetchBalance(supabase)
         // Ensure server-side cookies exist if client has a session
         try {
           // quick ping to see if server sees session
@@ -139,9 +161,10 @@ export function Header() {
             const { data: sid } = await supabase.rpc('get_or_create_short_id')
             if (sid) setShortId(String(sid))
           } catch {}
+          await fetchBalance(supabase)
           setAvatarUrl(nextAvatar)
         } else {
-          setUserEmail(undefined); setAvatarUrl(undefined); setIsAdmin(false); setDisplayName(undefined); setShortId(undefined);
+          setUserEmail(undefined); setAvatarUrl(undefined); setIsAdmin(false); setDisplayName(undefined); setShortId(undefined); setWalletBalance(null);
         }
       })
       return () => { sub.subscription.unsubscribe() }
@@ -281,32 +304,38 @@ export function Header() {
                       {shortId && (
                         <div className="text-xs text-muted-foreground mt-0.5">ID: {shortId}</div>
                       )}
+                      {formattedBalance && (
+                        <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold text-emerald-200">
+                          <CircleDollarSign className="h-3 w-3" />
+                          <span>Saldo: {formattedBalance}</span>
+                        </div>
+                      )}
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
 
                     <DropdownMenuItem
-                      className="group flex items-center gap-2 rounded-md px-3 py-2 hover:bg-muted/60 focus:bg-muted/60"
+                      className="group flex items-center gap-2 rounded-md px-3 py-2 text-foreground/90 transition-colors data-[highlighted]:bg-white/10 data-[highlighted]:text-white"
                       onClick={() => router.push('/app/settings' as any)}
                     >
-                      <SettingsIcon className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-                      <span>Ustawienia</span>
+                      <SettingsIcon className="h-4 w-4 text-muted-foreground transition-colors group-data-[highlighted]:text-white" />
+                      <span className="transition-colors group-data-[highlighted]:text-white">Ustawienia</span>
                     </DropdownMenuItem>
 
                     <DropdownMenuItem
-                      className="group flex items-center gap-2 rounded-md px-3 py-2 hover:bg-muted/60 focus:bg-muted/60"
+                      className="group flex items-center gap-2 rounded-md px-3 py-2 text-foreground/90 transition-colors data-[highlighted]:bg-white/10 data-[highlighted]:text-white"
                       onClick={() => router.push('/app/history' as any)}
                     >
-                      <HistoryIcon className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-                      <span>Historia</span>
+                      <HistoryIcon className="h-4 w-4 text-muted-foreground transition-colors group-data-[highlighted]:text-white" />
+                      <span className="transition-colors group-data-[highlighted]:text-white">Historia</span>
                     </DropdownMenuItem>
 
                     {isAdmin && (
                       <DropdownMenuItem
-                        className="group flex items-center gap-2 rounded-md px-3 py-2 hover:bg-muted/60 focus:bg-muted/60"
+                        className="group flex items-center gap-2 rounded-md px-3 py-2 text-foreground/90 transition-colors data-[highlighted]:bg-white/10 data-[highlighted]:text-white"
                         onClick={() => router.push('/admin' as any)}
                       >
-                        <Shield className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-                        <span>Admin panel</span>
+                        <Shield className="h-4 w-4 text-muted-foreground transition-colors group-data-[highlighted]:text-white" />
+                        <span className="transition-colors group-data-[highlighted]:text-white">Admin panel</span>
                       </DropdownMenuItem>
                     )}
 
@@ -378,4 +407,8 @@ export function Header() {
       <div aria-hidden className="h-16 w-full" />
     </>
   );
+}
+
+function formatCurrency(value: number) {
+  return `${value.toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} zł`
 }

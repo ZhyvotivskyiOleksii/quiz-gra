@@ -14,7 +14,8 @@ type SubmissionSummary = {
   deadline?: string | null
   submittedAt: string | null
   imageUrl?: string | null
-  prize?: number | null
+  prizePool?: number | null
+  prizeAwarded?: number | null
   status: 'won' | 'lost' | 'pending'
   correct: number
   total: number
@@ -92,28 +93,15 @@ export function ResultsAccordion({ submissions }: { submissions: SubmissionSumma
           Brak wyników do wyświetlenia.
         </div>
       ) : (
-        filtered.map((submission) => {
-          const isOpen = openId === submission.id
-          const state = details[submission.id]?.status ?? 'idle'
-          const canViewResults = submission.status !== 'pending'
-          return (
+        <div className="space-y-5">
+          {filtered.map((submission) => {
+            const isOpen = openId === submission.id
+            const state = details[submission.id]?.status ?? 'idle'
+            const canViewResults = submission.status !== 'pending'
+            return (
             <div key={submission.id} className="space-y-3">
-              <div className="overflow-hidden rounded-[32px] border border-white/10 bg-[rgba(18,10,25,0.92)] text-white shadow-[0_30px_80px_rgba(3,3,10,0.55)] backdrop-blur-xl">
-                <div className="grid grid-cols-1 gap-0 lg:grid-cols-[360px,1fr]">
-                  <div className="relative aspect-[16/9] w-full overflow-hidden lg:aspect-auto lg:min-h-[220px]">
-                    <Image
-                      src={submission.imageUrl || '/images/preview.webp'}
-                      alt={submission.quizTitle}
-                      fill
-                      className="object-cover"
-                    />
-                    {submission.prize ? (
-                      <div className="absolute left-4 top-4 rounded-full bg-emerald-500/90 px-3 py-1 text-xs font-semibold text-white shadow">
-                        {submission.prize.toLocaleString('pl-PL')} zł
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className="flex flex-1 flex-col justify-center gap-6 p-5 sm:p-6 lg:p-8">
+              <div className="flex flex-col overflow-hidden rounded-[32px] border border-white/10 bg-[rgba(18,10,25,0.92)] text-white shadow-[0_30px_80px_rgba(3,3,10,0.55)] backdrop-blur-xl lg:flex-row">
+                <div className="flex flex-1 flex-col justify-center gap-6 p-5 sm:p-6 lg:p-8">
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div className="space-y-2">
                         <p className="text-[11px] uppercase tracking-[0.35em] text-white/60">
@@ -157,6 +145,16 @@ export function ResultsAccordion({ submissions }: { submissions: SubmissionSumma
                           <p className="text-lg font-semibold text-emerald-300">+{submission.points}</p>
                         </div>
                       )}
+                      {typeof submission.prizeAwarded === 'number' && (
+                        <div className="leading-tight">
+                          <p className="text-white/60">Twoja nagroda</p>
+                          <p className={cn('text-lg font-semibold', submission.prizeAwarded > 0 ? 'text-yellow-300' : 'text-white/60')}>
+                            {submission.prizeAwarded > 0
+                              ? `${submission.prizeAwarded.toLocaleString('pl-PL')} zł`
+                              : '—'}
+                          </p>
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex flex-col gap-2 pt-1">
@@ -189,13 +187,12 @@ export function ResultsAccordion({ submissions }: { submissions: SubmissionSumma
                             <>Wyniki wkrótce</>
                           )}
                         </Button>
-                        <Button
-                          variant="secondary"
-                          className="rounded-full border border-white/15 bg-white/5 px-6 text-sm text-white hover:bg-white/15"
-                        >
-                          <Gift className="mr-2 h-4 w-4" />
-                          Nagrody
-                        </Button>
+                        {typeof submission.prizeAwarded === 'number' && submission.prizeAwarded > 0 && (
+                          <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-1.5 text-sm text-white">
+                            <Gift className="h-4 w-4" />
+                            Wypłacono {submission.prizeAwarded.toLocaleString('pl-PL')} zł
+                          </div>
+                        )}
                       </div>
                       {!canViewResults && (
                         <p className="text-xs text-white/60">
@@ -203,7 +200,23 @@ export function ResultsAccordion({ submissions }: { submissions: SubmissionSumma
                         </p>
                       )}
                     </div>
-                  </div>
+                </div>
+                <div className="relative h-60 w-full overflow-hidden rounded-t-[32px] lg:h-auto lg:w-[45%] lg:rounded-l-none lg:rounded-r-[32px]">
+                  <Image
+                    src={submission.imageUrl || '/images/preview.webp'}
+                    alt={submission.quizTitle}
+                    fill
+                    className="object-cover object-center"
+                  />
+                  {typeof submission.prizeAwarded === 'number' && submission.prizeAwarded > 0 ? (
+                    <div className="absolute right-4 top-4 rounded-full bg-emerald-500/90 px-3 py-1 text-xs font-semibold text-white shadow">
+                      Wygrana {submission.prizeAwarded.toLocaleString('pl-PL')} zł
+                    </div>
+                  ) : submission.prizePool ? (
+                    <div className="absolute right-4 top-4 rounded-full bg-black/60 px-3 py-1 text-xs font-semibold text-white shadow">
+                      Pula {submission.prizePool.toLocaleString('pl-PL')} zł
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
@@ -265,7 +278,8 @@ export function ResultsAccordion({ submissions }: { submissions: SubmissionSumma
               )}
             </div>
           )
-        })
+        })}
+        </div>
       )}
     </div>
   )

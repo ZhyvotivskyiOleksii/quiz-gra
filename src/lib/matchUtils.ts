@@ -1,4 +1,4 @@
-import type { TheSportsDbEvent } from './footballApi'
+import type { ScoreBusterMatch } from './footballApi'
 
 export function normalizeTeamName(name?: string | null): string {
   return (name || '').trim().toLowerCase().replace(/\s+/g, ' ')
@@ -11,21 +11,15 @@ export function matchKey(home?: string | null, away?: string | null, kickoff?: s
   return `${homeKey}|${awayKey}|${dateKey}`
 }
 
-export function toKickoffIso(event: TheSportsDbEvent): string {
-  const ts = eventTimestamp(event)
+export function toKickoffIso(match: ScoreBusterMatch): string {
+  const ts = eventTimestamp(match)
   if (ts) return ts.toISOString()
   return new Date().toISOString()
 }
 
-export function eventTimestamp(event: TheSportsDbEvent): Date | null {
-  if (event.strTimestamp) {
-    const ts = new Date(event.strTimestamp)
-    if (!Number.isNaN(ts.getTime())) return ts
-  }
-  if (event.dateEvent) {
-    const time = event.strTime && event.strTime !== '' ? event.strTime : '12:00:00'
-    const composed = new Date(`${event.dateEvent}T${time}Z`)
-    if (!Number.isNaN(composed.getTime())) return composed
-  }
+export function eventTimestamp(match: ScoreBusterMatch): Date | null {
+  if (!match?.kickoff) return null
+  const ts = new Date(match.kickoff)
+  if (!Number.isNaN(ts.getTime())) return ts
   return null
 }
