@@ -340,6 +340,7 @@ export default function QuizPlayPage() {
   )
 
 
+}
 function NumericPicker({
   value,
   onChange,

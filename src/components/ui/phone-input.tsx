@@ -21,37 +21,41 @@ export function PhoneInputField({ value, onChange, id, label, error, className }
   }, [value])
 
   return (
-    <div className={cn('relative', className)}>
-      {/* react-phone-input-2 renders its own flag + input */}
-      <PhoneInput
-        country={'pl'}
-        onlyCountries={['pl']}
-        disableDropdown
-        countryCodeEditable={false}
-        value={normalized}
-        onChange={(val: string) => {
-          const withPlus = val ? `+${val.replace(/^\+?/, '')}` : ''
-          onChange?.(withPlus)
-        }}
-        inputProps={{ id, name: id, autoComplete: 'tel' }}
-        specialLabel={label ? String(label) : ''}
-        containerClass="!w-full"
-        // Keep sizes compact on mobile
-        inputClass="!w-full !h-10 sm:!h-11 !bg-background !text-sm sm:!text-base !border-0 !ring-0 !pl-12 !pr-3 !rounded-md"
-        buttonClass="!bg-transparent !border-0 !px-3"
-        dropdownClass="!bg-card !text-foreground !border !border-input"
-        disabled={false}
-        // No country search/dropdown as it's locked to PL
-        enableSearch={false}
-      />
+    <div className={cn('space-y-1', className)}>
+      {label ? (
+        <label htmlFor={id} className="mb-1 block text-base text-muted-foreground">
+          {label}
+        </label>
+      ) : null}
 
-      {/* Custom border similar to NotchedInput */}
-      <div
-        className={cn(
-          'pointer-events-none absolute inset-0 rounded-md border transition-colors',
-          error ? 'border-destructive' : 'border-input',
-        )}
-      />
+      <div className="relative">
+        <PhoneInput
+          country={'pl'}
+          onlyCountries={['pl']}
+          disableDropdown
+          countryCodeEditable={false}
+          value={normalized}
+          onChange={(val: string) => {
+            const withPlus = val ? `+${val.replace(/^\+?/, '')}` : ''
+            onChange?.(withPlus)
+          }}
+          inputProps={{ id, name: id, autoComplete: 'tel' }}
+          specialLabel={''}
+          containerClass="!w-full"
+          inputClass="!w-full !h-11 !bg-background !text-base !border-0 !ring-0 !pl-14 !pr-3 !rounded-md !text-foreground"
+          buttonClass="!bg-transparent !border-0 !px-3 !pl-3"
+          dropdownClass="!bg-card !text-foreground !border !border-input"
+          disabled={false}
+          enableSearch={false}
+        />
+
+        <div
+          className={cn(
+            'pointer-events-none absolute inset-0 rounded-md border transition-colors',
+            error ? 'border-destructive' : 'border-input',
+          )}
+        />
+      </div>
     </div>
   )
 }

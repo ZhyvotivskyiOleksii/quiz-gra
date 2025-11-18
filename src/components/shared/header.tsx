@@ -13,19 +13,35 @@ import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '../ui/dropdown-menu';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 
-export function Header() {
+type HeaderInitialAuth = {
+  email?: string
+  avatarUrl?: string
+  displayName?: string
+  shortId?: string | null
+  isAdmin?: boolean
+  walletBalance?: number | null
+  hasSession?: boolean
+}
+
+type HeaderProps = {
+  initialAuth?: HeaderInitialAuth
+}
+
+export function Header({ initialAuth }: HeaderProps = {}) {
   const router = useRouter();
   const pathname = usePathname();
   const [open, setOpen] = React.useState(false);
   const [authView, setAuthView] = React.useState<'login' | 'register'>('login');
   const [loginPrefill, setLoginPrefill] = React.useState<{ email?: string; password?: string; notice?: string }|null>(null);
-  const [userEmail, setUserEmail] = React.useState<string | undefined>(undefined)
-  const [hasSession, setHasSession] = React.useState(false)
-  const [avatarUrl, setAvatarUrl] = React.useState<string | undefined>(undefined)
-  const [isAdmin, setIsAdmin] = React.useState(false)
-  const [displayName, setDisplayName] = React.useState<string | undefined>(undefined)
-  const [shortId, setShortId] = React.useState<string | undefined>(undefined)
-  const [walletBalance, setWalletBalance] = React.useState<number | null>(null)
+  const [userEmail, setUserEmail] = React.useState<string | undefined>(initialAuth?.email)
+  const [hasSession, setHasSession] = React.useState(Boolean(initialAuth?.hasSession ?? initialAuth?.email))
+  const [avatarUrl, setAvatarUrl] = React.useState<string | undefined>(initialAuth?.avatarUrl || undefined)
+  const [isAdmin, setIsAdmin] = React.useState(Boolean(initialAuth?.isAdmin))
+  const [displayName, setDisplayName] = React.useState<string | undefined>(initialAuth?.displayName || undefined)
+  const [shortId, setShortId] = React.useState<string | undefined>(initialAuth?.shortId || undefined)
+  const [walletBalance, setWalletBalance] = React.useState<number | null>(
+    typeof initialAuth?.walletBalance === 'number' ? initialAuth.walletBalance : null,
+  )
   const formattedBalance = React.useMemo(() => {
     if (walletBalance === null) return null
     return formatCurrency(walletBalance)

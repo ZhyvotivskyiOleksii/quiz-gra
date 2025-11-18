@@ -24,6 +24,20 @@ type QuizSummary = {
 }
 
 export default function BonusesPage() {
+  return (
+    <React.Suspense
+      fallback={
+        <div className="rounded-3xl border border-white/10 bg-black/30 p-6 text-sm text-muted-foreground">
+          Ładowanie panelu bonusów…
+        </div>
+      }
+    >
+      <BonusesPageContent />
+    </React.Suspense>
+  )
+}
+
+function BonusesPageContent() {
   const searchParams = useSearchParams()
   const [quizzes, setQuizzes] = React.useState<QuizSummary[]>([])
   const [loadingQuizzes, setLoadingQuizzes] = React.useState(true)

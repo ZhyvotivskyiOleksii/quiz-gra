@@ -5,6 +5,7 @@ import { Timer, ChevronRight, PenSquare } from 'lucide-react'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
 import BonusInfoPanel, { BonusQuizSummary } from '@/components/app/bonus-info-panel'
+import { redirect } from 'next/navigation'
 
 export default async function PlayPage() {
   // Load published quizzes for this view
@@ -21,6 +22,10 @@ export default async function PlayPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser()
+
+  if (!user) {
+    redirect('/?auth=login')
+  }
 
   const { data: rounds } = await supabase
     .from('rounds')
@@ -101,9 +106,8 @@ export default async function PlayPage() {
   }
 
   return (
-    <div className="relative mx-auto w-full max-w-[1200px] space-y-6">
-      {/* Centered decorative background image */}
-      <div aria-hidden className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-[340px] z-0">
+    <div className="relative mx-auto flex h-full w-full max-w-[1200px] flex-col space-y-6">
+      <div aria-hidden className="pointer-events-none absolute left-1/2 top-[300px] -translate-x-1/2 z-0">
         <Image
           src="/images/qv-img.svg"
           alt=""
@@ -114,22 +118,24 @@ export default async function PlayPage() {
           priority
         />
       </div>
-      <div className="relative z-10 py-1">
-        <div>
-          <h1 className="font-headline font-extrabold uppercase text-4xl sm:text-5xl bg-clip-text text-transparent bg-gradient-to-b from-yellow-300 via-yellow-300 to-yellow-600 drop-shadow-[0_2px_0_rgba(0,0,0,0.6)]">
-            TYPUJ I WYGRYWAJ
-          </h1>
-          <p className="mt-1 text-2xl sm:text-3xl font-extrabold uppercase text-white drop-shadow">ZA DARMO</p>
-        </div>
-      </div>
 
-      {/* Удалены старые режимы. Ниже — только опубликованные квизы. */}
+      <div className="relative z-10 flex flex-1 gap-6 lg:grid lg:grid-cols-[minmax(0,1.75fr),minmax(360px,1fr)] lg:items-start">
+        <div className="flex h-full flex-col gap-4">
+          <div className="flex-none">
+            <h1 className="font-headline font-extrabold uppercase text-4xl sm:text-5xl bg-clip-text text-transparent bg-gradient-to-b from-yellow-300 via-yellow-300 to-yellow-600 drop-shadow-[0_2px_0_rgba(0,0,0,0.6)]">
+              TYPUJ I WYGRYWAJ
+            </h1>
+            <p className="mt-1 text-2xl sm:text-3xl font-extrabold uppercase text-white drop-shadow">ZA DARMO</p>
+          </div>
 
-      {/* Dyn. quizzes published by admins */}
-      {items.length > 0 && (
-        <div className="relative z-10 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.8fr),minmax(360px,1fr)]">
-          <div className="space-y-4 lg:pr-2 max-w-[860px]">
-            {items.map((r:any) => {
+          <div className="flex-1 space-y-4 overflow-y-auto pr-2 lg:pr-3 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+            {items.length === 0 ? (
+              <div className="flex h-full items-center justify-center rounded-[32px] border border-dashed border-white/15 bg-black/20 p-8 text-center text-white/70">
+                Brak aktywnych wiktoryн. Wróć wkrótce — nowe rundy pojawiają się regularnie.
+              </div>
+            ) : (
+              <>
+                {items.map((r: any) => {
               const q = r.quizzes?.[0] || {}
               const img = q.image_url || '/images/preview.webp'
               const prize = q.prize
@@ -198,14 +204,23 @@ export default async function PlayPage() {
                 </div>
               )
             })}
+              </>
+            )}
           </div>
-          {quizSummaries.length > 0 && (
-            <div className="lg:sticky lg:top-20">
-              <BonusInfoPanel quizzes={quizSummaries} />
-            </div>
-          )}
         </div>
-      )}
+
+        <div className="space-y-4 lg:flex lg:h-full lg:flex-col lg:self-start">
+          <div className="lg:sticky lg:top-0">
+            {quizSummaries.length > 0 ? (
+              <BonusInfoPanel quizzes={quizSummaries} />
+            ) : (
+              <div className="rounded-[32px] border border-white/10 bg-black/30 p-6 text-center text-sm text-white/70">
+                Brak zdefiniowanych bonusów dla aktywnych rund.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

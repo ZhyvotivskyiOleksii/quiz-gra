@@ -37,7 +37,7 @@ export const NotchedInput = React.forwardRef<HTMLInputElement, NotchedInputProps
             ref={ref}
             placeholder={ph}
             className={cn(
-              "peer h-10 sm:h-11 w-full rounded-md bg-background px-3 pr-10 text-sm sm:text-base focus:outline-none",
+              "peer h-10 sm:h-11 w-full rounded-md bg-background px-3 pr-10 text-base focus:outline-none",
               "border-0 ring-0",
               "disabled:cursor-not-allowed disabled:opacity-50"
             )}
@@ -60,7 +60,7 @@ export const NotchedInput = React.forwardRef<HTMLInputElement, NotchedInputProps
             </fieldset>
           )}
           <label htmlFor={inputId} className={cn(
-            "absolute left-3 top-1/2 -translate-y-1/2 text-sm sm:text-base text-muted-foreground",
+            "absolute left-3 top-1/2 -translate-y-1/2 text-base text-muted-foreground",
             "transition-all",
             "peer-focus:-top-2.5 peer-[:not(:placeholder-shown)]:-top-2.5 peer-focus:text-xs peer-[:not(:placeholder-shown)]:text-xs",
             "px-1 bg-background"
@@ -81,13 +81,13 @@ export const NotchedInput = React.forwardRef<HTMLInputElement, NotchedInputProps
         const input = (e.currentTarget.querySelector('input') as HTMLInputElement | null)
         if (input) input.focus()
       }}>
-        <label htmlFor={inputId} className="mb-1 block text-sm text-muted-foreground">{label}</label>
+        <label htmlFor={inputId} className="mb-1 block text-base text-muted-foreground">{label}</label>
         <input
           id={inputId}
           ref={ref}
           placeholder={placeholder}
           className={cn(
-            "h-10 sm:h-11 w-full rounded-md px-3 pr-10 text-sm sm:text-base focus:outline-none",
+            "h-10 sm:h-11 w-full rounded-md px-3 pr-10 text-base focus:outline-none",
             borderless ? "bg-muted/20 border-0 ring-0" : "bg-background border border-input ring-0 focus:border-primary",
             "disabled:cursor-not-allowed disabled:opacity-50"
           )}

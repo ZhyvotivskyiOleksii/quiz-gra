@@ -153,22 +153,26 @@ function StatCard({
   iconSrc: string
 }) {
   return (
-    <Card className="flex items-center justify-between rounded-3xl border border-white/10 bg-[rgba(25,12,22,0.95)] px-5 py-4 text-white shadow-lg">
-      <div>
+    <Card className="flex min-h-[120px] items-stretch rounded-3xl border border-white/10 bg-[rgba(25,12,22,0.95)] pl-5 pr-0 py-0 text-white shadow-lg overflow-hidden">
+      <div className="flex flex-col justify-center py-4">
         <p className="text-xs uppercase tracking-[0.35em] text-white/60">{title}</p>
         <div className="mt-2 flex items-baseline gap-2">
           <span className="text-4xl font-extrabold">{value}</span>
           {description && <span className="text-xs text-white/70">{description}</span>}
         </div>
       </div>
-      <Image
-        src={iconSrc}
-        alt=""
-        width={56}
-        height={56}
-        className="h-12 w-12 object-contain drop-shadow-[0_6px_12px_rgba(0,0,0,0.45)]"
-        priority={false}
-      />
+      <div className="ml-auto flex flex-1 items-stretch justify-end">
+        <div className="relative h-full min-h-[120px] w-[120px]">
+          <Image
+            src={iconSrc}
+            alt=""
+            fill
+            sizes="110px"
+            className="object-contain object-right drop-shadow-[0_6px_12px_rgba(0,0,0,0.45)]"
+            priority={false}
+          />
+        </div>
+      </div>
     </Card>
   )
 }
