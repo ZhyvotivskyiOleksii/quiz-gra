@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import NotchedInput from '@/components/ui/notched-input'
 import { cn } from '@/lib/utils'
+import { PitchLoader } from '@/components/ui/pitch-loader'
 import {
   seedPrizeBrackets,
   generateBracketRowId,
@@ -13,6 +14,7 @@ import {
   normalizePrizeBrackets,
   matchesDefaultBracketStructure,
   distributePrizeByDefaultRatios,
+  DEFAULT_PRIZE_BRACKETS,
   type PrizeBracketRow,
 } from '@/lib/prizeBrackets'
 
@@ -27,8 +29,8 @@ export default function BonusesPage() {
   return (
     <React.Suspense
       fallback={
-        <div className="rounded-3xl border border-white/10 bg-black/30 p-6 text-sm text-muted-foreground">
-          Ładowanie panelu bonusów…
+        <div className="flex min-h-[320px] items-center justify-center rounded-3xl border border-white/10 bg-black/40">
+          <PitchLoader />
         </div>
       }
     >
@@ -44,13 +46,19 @@ function BonusesPageContent() {
   const [selectedId, setSelectedId] = React.useState<string | null>(null)
   const selectedIdRef = React.useRef<string | null>(null)
   const [brackets, setBrackets] = React.useState<PrizeBracketRow[]>(seedPrizeBrackets())
+  const [targetPrize, setTargetPrize] = React.useState<string>('')
   const [loadingBrackets, setLoadingBrackets] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
   const [message, setMessage] = React.useState<string | null>(null)
   const [error, setError] = React.useState<string | null>(null)
   const prizeTotal = React.useMemo(() => sumPrizePools(brackets), [brackets])
+  const fixedThresholds = React.useMemo(() => DEFAULT_PRIZE_BRACKETS.map((row) => row.correct), [])
   const queryQuizId = searchParams?.get('quiz')
   const selectedQuiz = quizzes.find((q) => q.id === selectedId) || null
+  const parsedTargetPrize = React.useMemo(() => {
+    const value = Number(targetPrize)
+    return Number.isFinite(value) && value > 0 ? value : 0
+  }, [targetPrize])
 
   const loadQuizzes = React.useCallback(async () => {
     setLoadingQuizzes(true)
@@ -103,7 +111,11 @@ function BonusesPageContent() {
       }))
       if (selectedIdRef.current !== quizId) return
       if (rows.length) {
-        setBrackets(rows)
+        const normalized = fixedThresholds.map((correct) => {
+          const match = rows.find((row) => row.correct === correct)
+          return match ?? { id: generateBracketRowId(), correct, pool: 0 }
+        })
+        setBrackets(normalized)
         return
       }
       const seeded = seedPrizeBrackets()
@@ -118,7 +130,7 @@ function BonusesPageContent() {
         setLoadingBrackets(false)
       }
     }
-  }, [quizzes])
+  }, [fixedThresholds, quizzes])
 
   React.useEffect(() => {
     selectedIdRef.current = selectedId
@@ -141,43 +153,41 @@ function BonusesPageContent() {
       setMessage(null)
       setError(null)
       setLoadingBrackets(false)
+      setTargetPrize('')
       return
     }
     setMessage(null)
     setError(null)
     loadBrackets(selectedQuiz.id, selectedQuiz)
+    setTargetPrize(
+      typeof selectedQuiz.prize === 'number' && Number.isFinite(selectedQuiz.prize)
+        ? String(selectedQuiz.prize)
+        : '',
+    )
   }, [selectedQuiz, loadBrackets])
-
-  function addBracketRow() {
-    setBrackets((prev) => [
-      ...prev,
-      {
-        id: generateBracketRowId(),
-        correct: (prev[prev.length - 1]?.correct ?? 1) + 1,
-        pool: 0,
-      },
-    ])
-  }
 
   function updateBracketRow(id: string, field: keyof Omit<PrizeBracketRow, 'id'>, value: number) {
     setBrackets((prev) => prev.map((row) => (row.id === id ? { ...row, [field]: value } : row)))
   }
 
-  function removeBracketRow(id: string) {
-    setBrackets((prev) => (prev.length <= 1 ? prev : prev.filter((row) => row.id !== id)))
-  }
+  const handleAutoDistribute = React.useCallback(() => {
+    if (!parsedTargetPrize) return
+    setBrackets((prev) => {
+      if (!matchesDefaultBracketStructure(prev)) return prev
+      return distributePrizeByDefaultRatios(prev, parsedTargetPrize)
+    })
+  }, [parsedTargetPrize])
 
   React.useEffect(() => {
     if (!selectedQuiz) return
-    const total = selectedQuiz.prize ?? 0
-    if (!Number.isFinite(total) || total <= 0) return
+    if (!parsedTargetPrize) return
     setBrackets((prev) => {
       if (!matchesDefaultBracketStructure(prev)) return prev
-      const next = distributePrizeByDefaultRatios(prev, total)
+      const next = distributePrizeByDefaultRatios(prev, parsedTargetPrize)
       const changed = next.some((row, idx) => row.pool !== prev[idx].pool)
       return changed ? next : prev
     })
-  }, [selectedQuiz?.id, selectedQuiz?.prize])
+  }, [selectedQuiz?.id, parsedTargetPrize])
 
   async function save() {
     if (!selectedQuiz) return
@@ -193,6 +203,14 @@ function BonusesPageContent() {
         .from('quiz_prize_brackets')
         .insert(payload.map((row) => ({ quiz_id: selectedQuiz.id, ...row })) as any)
       if (insErr) throw insErr
+      const nextPrize = parsedTargetPrize || sumPrizePools(payload)
+      if (nextPrize > 0) {
+        await s.from('quizzes').update({ prize: nextPrize }).eq('id', selectedQuiz.id)
+        setQuizzes((prev) =>
+          prev.map((quiz) => (quiz.id === selectedQuiz.id ? { ...quiz, prize: nextPrize } : quiz)),
+        )
+        setTargetPrize(String(nextPrize))
+      }
       await loadBrackets(selectedQuiz.id, selectedQuiz)
       setMessage('Zapisano progi nagród')
     } catch (err: any) {
@@ -215,7 +233,11 @@ function BonusesPageContent() {
             <CardDescription>Wybierz wiktorynę, aby edytować bonusy.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 overflow-y-auto max-h-[60vh] pr-1">
-            {loadingQuizzes && <div className="text-sm text-muted-foreground">Ładowanie…</div>}
+            {loadingQuizzes && (
+              <div className="flex items-center justify-center py-8">
+                <PitchLoader />
+              </div>
+            )}
             {!loadingQuizzes && quizzes.length === 0 && (
               <div className="text-sm text-muted-foreground">Brak wiktoryn.</div>
             )}
@@ -260,29 +282,48 @@ function BonusesPageContent() {
             {!selectedQuiz ? (
               <p className="text-sm text-muted-foreground">Wybierz wiktorynę, aby edytować bonusy.</p>
             ) : loadingBrackets ? (
-              <div className="text-sm text-muted-foreground">Ładowanie bonusów…</div>
+              <div className="flex items-center justify-center py-16">
+                <PitchLoader />
+              </div>
             ) : (
               <>
-                <div className="flex flex-wrap items-center justify-between text-xs text-muted-foreground">
-                  <span>
-                    Suma pul: <span className="font-semibold text-white">{prizeTotal.toLocaleString('pl-PL')} zł</span>
-                  </span>
-                  {typeof selectedQuiz.prize === 'number' && selectedQuiz.prize > 0 && (
-                    <span>
-                      Pula wiktoryny: <span className="font-semibold text-white">{selectedQuiz.prize.toLocaleString('pl-PL')} zł</span>
-                    </span>
-                  )}
-                </div>
-                <div className="space-y-3">
-                  {brackets.map((row, idx) => (
-                    <div key={row.id} className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr,1fr,auto]">
+                <div className="flex flex-wrap items-start justify-between gap-4 text-sm text-muted-foreground">
+                  <div className="space-y-1">
+                    <div>
+                      Suma pul:{' '}
+                      <span className="font-semibold text-white">{prizeTotal.toLocaleString('pl-PL')} zł</span>
+                    </div>
+                    <div className="text-[11px] uppercase tracking-[0.3em] text-white/50">Pula wiktoryny</div>
+                    <div className="flex items-center gap-2">
                       <NotchedInput
                         borderless
                         type="number"
-                        label={`Poprawnych odpowiedzi #${idx + 1}`}
-                        value={String(row.correct ?? '')}
-                        onChange={(e:any)=>updateBracketRow(row.id, 'correct', Number(e.target.value ?? 0))}
+                        className="max-w-[150px]"
+                        value={targetPrize}
+                        onChange={(e:any)=>setTargetPrize(e.target.value)}
                       />
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="rounded-full text-xs"
+                        disabled={!parsedTargetPrize || !matchesDefaultBracketStructure(brackets)}
+                        onClick={handleAutoDistribute}
+                      >
+                        Rozłóż pulę
+                      </Button>
+                    </div>
+                  </div>
+                  {typeof selectedQuiz.prize === 'number' && selectedQuiz.prize > 0 && (
+                    <div className="text-xs text-white/60">
+                      Aktualnie zapisane:{' '}
+                      <span className="font-semibold text-white">{selectedQuiz.prize.toLocaleString('pl-PL')} zł</span>
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-3">
+                  {brackets.map((row) => (
+                    <div key={row.id} className="grid grid-cols-1 gap-3 sm:grid-cols-[auto,1fr] sm:items-end">
+                      <div className="text-sm font-semibold text-white">{row.correct} poprawnych</div>
                       <NotchedInput
                         borderless
                         type="number"
@@ -290,24 +331,10 @@ function BonusesPageContent() {
                         value={String(row.pool ?? '')}
                         onChange={(e:any)=>updateBracketRow(row.id, 'pool', Number(e.target.value ?? 0))}
                       />
-                      <div className="flex items-end justify-end">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-xs text-muted-foreground hover:text-white"
-                          onClick={()=>removeBracketRow(row.id)}
-                          disabled={brackets.length <= 1}
-                        >
-                          Usuń
-                        </Button>
-                      </div>
                     </div>
                   ))}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" variant="outline" size="sm" onClick={addBracketRow}>
-                    Dodaj próg
-                  </Button>
                   <Button type="button" size="sm" onClick={save} disabled={saving}>
                     {saving ? 'Zapisuję…' : 'Zapisz progi nagród'}
                   </Button>

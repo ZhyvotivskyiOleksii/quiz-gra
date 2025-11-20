@@ -1,11 +1,11 @@
-B97GVjzl9PTPw4U2 пароль 
-
+B97GVjzl9PTPw4U2 парол
+JElgi76QRsdxqi3X
 
 git fetch origin && git reset --hard @{u} && git clean -fd
 
 E2bt1ltdqZMQiyLuU0nHwwgkGJ8wrxnK9kgb5N3V
 
-
+npm run ws:listener
 
 Storage → Cookies → http://localhost:9002
 
@@ -105,3 +105,24 @@ curl -i "https://usjnxyedapxkymlwicju.supabase.co/auth/v1/otp" \
   -H "apikey: $ANON" \
   -H "Content-Type: application/json" \
   -d '{"phone":"+48572245574","type":"sms"}' 
+
+
+
+
+
+
+
+  база даних таблиці 
+
+
+  sudo docker run --rm \
+  -e PGPASSWORD="JElgi76QRsdxqi3X" \
+  postgres:latest \
+  pg_dump \
+    --schema-only \
+    --no-owner \
+    --host=db.usjnxyedapxkymlwicju.supabase.co \
+    --port=5432 \
+    --username=postgres \
+    --dbname=postgres \
+  > quiztime_schema.sql

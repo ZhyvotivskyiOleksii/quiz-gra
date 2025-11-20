@@ -11,6 +11,19 @@ import { Label } from '@/components/ui/label'
 import ImageUploader from '@/components/admin/image-uploader'
 import { sumPrizePools, type PrizeBracketRow } from '@/lib/prizeBrackets'
 
+const FUTURE_STAT_KINDS = ['future_yellow_cards', 'future_corners'] as const
+type FutureStatKind = (typeof FUTURE_STAT_KINDS)[number]
+const FUTURE_STAT_DEFAULTS: Record<FutureStatKind, { prompt: string; numeric: { min: number; max: number; step: number } }> = {
+  future_yellow_cards: {
+    prompt: 'Ile żółtych kartek padnie w meczu?',
+    numeric: { min: 0, max: 12, step: 1 },
+  },
+  future_corners: {
+    prompt: 'Ile rzutów rożnych zobaczymy w meczu?',
+    numeric: { min: 0, max: 20, step: 1 },
+  },
+}
+
 type QuizRow = { id: string; title: string; round_id: string }
 type RoundRow = {
   id: string; label: string; starts_at: string | null; deadline_at: string | null; timezone: string | null; status: 'draft'|'published'|'locked'|'settled';
@@ -34,8 +47,8 @@ export default function AdminQuizDetailsPage() {
   // Questions state
   const [qs, setQs] = React.useState<any[]>([])
   const [qLoading, setQLoading] = React.useState(true)
-  const [qKind, setQKind] = React.useState<'history_single'|'history_numeric'|'future_1x2'|'future_score'>('history_single')
-  const [qPrompt, setQPrompt] = React.useState('')
+  const [qKind, setQKind] = React.useState<'history_single'|'history_numeric'|'future_1x2'|'future_score'|FutureStatKind>('history_single')
+  const [qPrompt, setQPrompt] = React.useState(defaultPrompt('history_single'))
   const [qOptions, setQOptions] = React.useState<string[]>([''])
   const [matches, setMatches] = React.useState<any[]>([])
   const [editing, setEditing] = React.useState<string | null>(null)
@@ -44,6 +57,11 @@ export default function AdminQuizDetailsPage() {
   const prizeBracketsTotal = React.useMemo(() => sumPrizePools(prizeBrackets), [prizeBrackets])
   const [settling, setSettling] = React.useState(false)
   const [historyAutoLoading, setHistoryAutoLoading] = React.useState(false)
+  React.useEffect(() => {
+    if (shouldLockPrompt(qKind)) {
+      setQPrompt(defaultPrompt(qKind))
+    }
+  }, [qKind])
 
   async function load() {
     const s = getSupabase()
@@ -66,6 +84,11 @@ export default function AdminQuizDetailsPage() {
   React.useEffect(() => { load() }, [id])
   React.useEffect(() => { loadQuestions() }, [quiz?.id])
   React.useEffect(() => { loadMatches() }, [round?.id])
+
+  const handlePrizeChange = React.useCallback((value: string) => {
+    const sanitized = value.replace(/[^0-9]/g, '')
+    setPrize(sanitized)
+  }, [])
 
   async function loadQuestions() {
     if (!id) return
@@ -188,7 +211,7 @@ export default function AdminQuizDetailsPage() {
   // --- Questions helpers ---
   function resetNewQ() {
     setQKind('history_single')
-    setQPrompt('')
+    setQPrompt(defaultPrompt('history_single'))
     setQOptions([''])
   }
   function updateOption(i: number, v: string) {
@@ -208,6 +231,9 @@ export default function AdminQuizDetailsPage() {
           if (qKind === 'future_1x2') options = ['Gospodarze', 'Remis', 'Goście']
           else return toast({ title: 'Dodaj co najmniej jedną opcję', variant: 'destructive' as any })
         } else options = opts
+      }
+      if (qKind === 'history_numeric') {
+        options = getDefaultNumericOptions('history_numeric')
       }
       const order = (qs[qs.length - 1]?.order_index ?? -1) + 1
       const { error } = await s.from('quiz_questions').insert({
@@ -229,13 +255,12 @@ export default function AdminQuizDetailsPage() {
 
   async function addQuestionWithMatch() {
     // Wraps addQuestion to append selected match from editor state on create form
-    if (qKind === 'future_1x2' || qKind === 'future_score') {
+    if (qKind === 'future_1x2' || qKind === 'future_score' || isFutureStatKind(qKind)) {
       const mId = (editData as any)?.new_match_id || null
       if (!mId) {
         toast({ title: 'Wybierz mecz dla pytania', variant: 'destructive' as any })
         return
       }
-      // Temporarily set match in local addQuestion flow by pushing directly via API to keep code small
       try {
         const s = getSupabase()
         const order = (qs[qs.length - 1]?.order_index ?? -1) + 1
@@ -244,10 +269,17 @@ export default function AdminQuizDetailsPage() {
           const opts = (qOptions || []).map((o) => o.trim()).filter(Boolean)
           options = opts.length ? opts : (qKind === 'future_1x2' ? ['1','X','2'] : null)
         }
+        if (isFutureStatKind(qKind)) {
+          options = getDefaultNumericOptions(qKind)
+        }
+        if (qKind === 'future_score') {
+          options = { min_home: 0, max_home: 10, min_away: 0, max_away: 10 }
+        }
+        const promptValue = shouldLockPrompt(qKind) ? defaultPrompt(qKind) : qPrompt
         const { error } = await s.from('quiz_questions').insert({
           quiz_id: id,
           kind: qKind,
-          prompt: qPrompt,
+          prompt: promptValue,
           options,
           order_index: order,
           match_id: mId,
@@ -289,10 +321,15 @@ export default function AdminQuizDetailsPage() {
 
   function startEdit(q:any) {
     setEditing(q.id)
-    const def: any = { prompt: q.prompt, match_id: q.match_id || '' }
+    const def: any = { prompt: shouldLockPrompt(q.kind) ? defaultPrompt(q.kind) : q.prompt, match_id: q.match_id || '' }
     if (q.kind === 'history_numeric' && q.options) {
       def.min = q.options?.min ?? 0
       def.max = q.options?.max ?? 6
+      def.step = q.options?.step ?? 1
+    }
+    if (isFutureStatKind(q.kind) && q.options) {
+      def.min = q.options?.min ?? getDefaultNumericOptions(q.kind).min
+      def.max = q.options?.max ?? getDefaultNumericOptions(q.kind).max
       def.step = q.options?.step ?? 1
     }
     if (q.kind === 'future_score' && q.options) {
@@ -314,9 +351,17 @@ export default function AdminQuizDetailsPage() {
   async function saveEdit(idQ: string, kind: string) {
     try {
       const s = getSupabase()
-      const upd: any = { prompt: editData.prompt }
-      if (kind === 'future_1x2' || kind === 'future_score') upd.match_id = editData.match_id || null
+      const upd: any = { prompt: shouldLockPrompt(kind) ? defaultPrompt(kind) : editData.prompt }
+      if (kind === 'future_1x2' || kind === 'future_score' || isFutureStatKind(kind)) upd.match_id = editData.match_id || null
       if (kind === 'history_numeric') upd.options = { min: Number(editData.min ?? 0), max: Number(editData.max ?? 6), step: Number(editData.step ?? 1) }
+      if (isFutureStatKind(kind)) {
+        const defaults = getDefaultNumericOptions(kind)
+        upd.options = {
+          min: Number(editData.min ?? defaults.min),
+          max: Number(editData.max ?? defaults.max),
+          step: Number(editData.step ?? defaults.step),
+        }
+      }
       if (kind === 'future_score') upd.options = { min_home: Number(editData.min_home ?? 0), max_home: Number(editData.max_home ?? 10), min_away: Number(editData.min_away ?? 0), max_away: Number(editData.max_away ?? 10) }
       if (kind === 'future_1x2') {
         upd.correct = editData.correct_choice || null
@@ -421,7 +466,14 @@ export default function AdminQuizDetailsPage() {
         <CardContent className="space-y-3">
           <NotchedInput borderless label={'Tytuł wiktoryny'} value={title} onChange={(e:any)=>setTitle(e.target.value)} />
           <ImageUploader value={imageUrl} onChange={setImageUrl as any} />
-          <NotchedInput borderless type="number" label={'Nagroda (zł)'} value={String(prize ?? '')} onChange={(e:any)=>setPrize(e.target.value)} />
+          <NotchedInput
+            borderless
+            inputMode="numeric"
+            pattern="[0-9]*"
+            label={'Nagroda (zł)'}
+            value={String(prize ?? '')}
+            onChange={(e:any)=>handlePrizeChange(e.target.value)}
+          />
           <NotchedInput borderless label={'Etykieta rundy (np. "14 kolejka")'} value={label} onChange={(e:any)=>setLabel(e.target.value)} />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <DateTimeField label={'Start'} value={startsAt} onChange={setStartsAt} />
@@ -549,8 +601,14 @@ export default function AdminQuizDetailsPage() {
                   </div>
                   {editing === q.id && (
                     <div className="border-t border-border/40 px-3 py-3 space-y-3">
-                      <NotchedInput borderless label={'Treść pytania'} value={editData.prompt || ''} onChange={(e:any)=>setEditData((d:any)=>({ ...d, prompt: e.target.value }))} />
-                      {(q.kind === 'future_1x2' || q.kind === 'future_score') && (
+                      <NotchedInput
+                        borderless
+                        label={'Treść pytania'}
+                        value={shouldLockPrompt(q.kind) ? defaultPrompt(q.kind) : editData.prompt || ''}
+                        disabled={shouldLockPrompt(q.kind)}
+                        onChange={(e:any)=>setEditData((d:any)=>({ ...d, prompt: e.target.value }))}
+                      />
+                      {(q.kind === 'future_1x2' || q.kind === 'future_score' || isFutureStatKind(q.kind)) && (
                         <div>
                           <Label>Mecz</Label>
                           <select className="mt-1 w-full rounded-md bg-muted/20 px-3 py-2 border-0 ring-0 focus:outline-none" value={editData.match_id || ''} onChange={(e)=>setEditData((d:any)=>({ ...d, match_id: e.target.value || null }))}>
@@ -565,6 +623,13 @@ export default function AdminQuizDetailsPage() {
                         <div className="grid grid-cols-3 gap-3">
                           <NotchedInput borderless type="number" label={'Min'} value={editData.min ?? 0} onChange={(e:any)=>setEditData((d:any)=>({ ...d, min: parseInt(e.target.value||'0') }))} />
                           <NotchedInput borderless type="number" label={'Max'} value={editData.max ?? 6} onChange={(e:any)=>setEditData((d:any)=>({ ...d, max: parseInt(e.target.value||'0') }))} />
+                          <NotchedInput borderless type="number" label={'Krok'} value={editData.step ?? 1} onChange={(e:any)=>setEditData((d:any)=>({ ...d, step: parseInt(e.target.value||'1') }))} />
+                        </div>
+                      )}
+                      {isFutureStatKind(q.kind) && (
+                        <div className="grid grid-cols-3 gap-3">
+                          <NotchedInput borderless type="number" label={'Min'} value={editData.min ?? getDefaultNumericOptions(q.kind).min} onChange={(e:any)=>setEditData((d:any)=>({ ...d, min: parseInt(e.target.value||'0') }))} />
+                          <NotchedInput borderless type="number" label={'Max'} value={editData.max ?? getDefaultNumericOptions(q.kind).max} onChange={(e:any)=>setEditData((d:any)=>({ ...d, max: parseInt(e.target.value||'0') }))} />
                           <NotchedInput borderless type="number" label={'Krok'} value={editData.step ?? 1} onChange={(e:any)=>setEditData((d:any)=>({ ...d, step: parseInt(e.target.value||'1') }))} />
                         </div>
                       )}
@@ -636,10 +701,18 @@ export default function AdminQuizDetailsPage() {
                     <option value="future_1x2">1X2 (przyszłość)</option>
                     <option value="history_numeric">Wartość liczbowa</option>
                     <option value="future_score">Dokładny wynik</option>
+                    <option value="future_yellow_cards">Żółte kartki (przyszłość)</option>
+                    <option value="future_corners">Rzuty rożne (przyszłość)</option>
                   </select>
                 </div>
                 <div className="sm:col-span-2">
-                  <NotchedInput borderless label={'Treść pytania'} value={qPrompt} onChange={(e:any)=>setQPrompt(e.target.value)} />
+                  <NotchedInput
+                    borderless
+                    label={'Treść pytania'}
+                    value={shouldLockPrompt(qKind) ? defaultPrompt(qKind) : qPrompt}
+                    disabled={shouldLockPrompt(qKind)}
+                    onChange={(e:any)=>setQPrompt(e.target.value)}
+                  />
                 </div>
               </div>
 
@@ -658,7 +731,7 @@ export default function AdminQuizDetailsPage() {
                 </div>
               )}
 
-              {(qKind === 'future_1x2' || qKind === 'future_score') && matches.length > 0 && (
+              {(qKind === 'future_1x2' || qKind === 'future_score' || isFutureStatKind(qKind)) && matches.length > 0 && (
                 <div className="mt-3">
                   <Label>Mecz (z rundy)</Label>
                   <select className="mt-1 w-full rounded-md bg-muted/20 px-3 py-2 border-0 ring-0 focus:outline-none" value={(editData as any).new_match_id || ''} onChange={(e)=>setEditData((d:any)=>({ ...d, new_match_id: e.target.value }))}>
@@ -684,10 +757,58 @@ export default function AdminQuizDetailsPage() {
 
 function kindLabel(k: string) {
   switch (k) {
-    case 'history_single': return 'Jednokrotny wybór'
-    case 'history_numeric': return 'Wartość liczbowa'
-    case 'future_1x2': return '1X2 (przyszłość)'
-    case 'future_score': return 'Dokładny wynik'
-    default: return k
+    case 'history_single':
+      return 'Jednokrotny wybór'
+    case 'history_numeric':
+      return 'Wartość liczbowa'
+    case 'future_1x2':
+      return '1X2 (przyszłość)'
+    case 'future_score':
+      return 'Dokładny wynik'
+    case 'future_yellow_cards':
+      return 'Żółte kartki (przyszłość)'
+    case 'future_corners':
+      return 'Rzuty rożne (przyszłość)'
+    default:
+      return k
   }
+}
+
+function defaultPrompt(kind: string) {
+  switch (kind) {
+    case 'history_single':
+      return 'Wybierz poprawną odpowiedź'
+    case 'history_numeric':
+      return 'Podaj wartość'
+    case 'future_1x2':
+      return 'Kto wygra mecz?'
+    case 'future_score':
+      return 'Jaki będzie dokładny wynik?'
+    case 'future_yellow_cards':
+      return FUTURE_STAT_DEFAULTS.future_yellow_cards.prompt
+    case 'future_corners':
+      return FUTURE_STAT_DEFAULTS.future_corners.prompt
+    default:
+      return 'Podaj wartość'
+  }
+}
+
+function shouldLockPrompt(kind?: string | null) {
+  return isFutureStatKind(kind)
+}
+
+function isFutureStatKind(kind?: string | null): kind is FutureStatKind {
+  if (!kind) return false
+  return (FUTURE_STAT_KINDS as readonly string[]).includes(kind as any)
+}
+
+function getDefaultNumericOptions(kind: string) {
+  if (kind === 'history_numeric') {
+    return { min: 0, max: 6, step: 1 }
+  }
+  if (isFutureStatKind(kind)) {
+    const base = FUTURE_STAT_DEFAULTS[kind].numeric
+    return { ...base }
+  }
+  return { min: 0, max: 6, step: 1 }
 }

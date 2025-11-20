@@ -15,10 +15,8 @@ type BracketSeed = {
 }
 
 export const DEFAULT_PRIZE_BRACKETS: BracketSeed[] = [
-  { correct: 3, pool: 25000 },
-  { correct: 4, pool: 10000 },
-  { correct: 5, pool: 7500 },
-  { correct: 6, pool: 7500 },
+  { correct: 5, pool: 2000 },
+  { correct: 6, pool: 4000 },
 ]
 
 const DEFAULT_PRIZE_TOTAL = DEFAULT_PRIZE_BRACKETS.reduce((sum, row) => sum + row.pool, 0)
@@ -58,6 +56,7 @@ export function normalizePrizeBrackets(
     const correct = Math.max(1, Math.floor(correctRaw))
     const pool = poolRaw
     if (pool <= 0) return
+    if (correct < 5) return
     map.set(correct, (map.get(correct) || 0) + pool)
   })
   return Array.from(map.entries())

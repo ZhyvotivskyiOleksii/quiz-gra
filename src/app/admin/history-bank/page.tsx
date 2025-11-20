@@ -8,7 +8,13 @@ import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { getSupabase } from '@/lib/supabaseClient'
-import { fetchLeagueResults, mapLeagueToApiId, type ScoreBusterMatch } from '@/lib/footballApi'
+import {
+  fetchLeagueResults,
+  mapLeagueToApiId,
+  type ScoreBusterMatch,
+  fetchMatchStats,
+  type ScoreBusterMatchStatMap,
+} from '@/lib/footballApi'
 import { buildHistoryQuestionFromEntry, type HistoryQuestionTemplate, type HistoryBankEntry } from '@/lib/historyBank'
 import { RefreshCcw, Download, Archive } from 'lucide-react'
 
@@ -90,7 +96,7 @@ export default function HistoryBankPage() {
     try {
       const { data, error } = await supabase
         .from('history_question_bank')
-        .select('id,match_identifier,template,home_team,away_team,home_score,away_score,played_at,status,league_code,source_kind,created_at')
+        .select('id,match_identifier,template,home_team,away_team,home_score,away_score,played_at,status,league_code,source_kind,created_at,payload')
         .order('played_at', { ascending: false, nullsLast: false })
         .order('created_at', { ascending: false })
         .limit(200)
@@ -131,7 +137,7 @@ export default function HistoryBankPage() {
     }
   }
 
-  function buildRow(match: ScoreBusterMatch, template: HistoryQuestionTemplate) {
+  function buildRow(match: ScoreBusterMatch, template: HistoryQuestionTemplate, stats?: Record<string, number | null | undefined>) {
     if (typeof match.homeTeam.score !== 'number' || typeof match.awayTeam.score !== 'number') {
       throw new Error('score_missing')
     }
@@ -149,14 +155,49 @@ export default function HistoryBankPage() {
       payload: {
         round: match.round,
         leagueId: match.leagueId,
+        stats: stats || null,
       },
     }
+  }
+
+  function requiresStats(template: HistoryQuestionTemplate) {
+    return template === 'total_yellow_cards' || template === 'total_corners'
+  }
+
+  async function loadStatsTotals(match: ScoreBusterMatch) {
+    const stats = await fetchMatchStats(match.id)
+    if (!stats) return null
+    return {
+      yellow_cards_total: extractStatTotal(stats, 'yellow_cards'),
+      corner_total: extractStatTotal(stats, 'corner'),
+    }
+  }
+
+  function extractStatTotal(stats: ScoreBusterMatchStatMap, key: string): number | null {
+    const stat = stats[key]
+    if (!stat) return null
+    const total = (stat.home ?? 0) + (stat.away ?? 0)
+    return Number.isFinite(total) ? total : null
   }
 
   async function importMatch(match: ScoreBusterMatch, template: HistoryQuestionTemplate) {
     try {
       setImporting(`${match.id}-${template}`)
-      const row = buildRow(match, template)
+      let statsPayload: Record<string, number | null | undefined> | undefined
+      if (requiresStats(template)) {
+        const totals = await loadStatsTotals(match)
+        if (!totals) {
+          throw new Error('Brak statystyk dla wybranego meczu.')
+        }
+        statsPayload = totals
+        if (template === 'total_yellow_cards' && typeof totals.yellow_cards_total !== 'number') {
+          throw new Error('Brak danych o żółtych kartkach dla tego meczu.')
+        }
+        if (template === 'total_corners' && typeof totals.corner_total !== 'number') {
+          throw new Error('Brak danych o rzutach rożnych dla tego meczu.')
+        }
+      }
+      const row = buildRow(match, template, statsPayload)
       const { error } = await supabase
         .from('history_question_bank')
         .upsert(row as any, { onConflict: 'match_identifier,template' })
@@ -196,6 +237,10 @@ export default function HistoryBankPage() {
         return 'Zwycięzca meczu'
       case 'total_goals':
         return 'Suma goli'
+      case 'total_yellow_cards':
+        return 'Żółte kartki'
+      case 'total_corners':
+        return 'Rzuty rożne'
       default:
         return template
     }
@@ -300,6 +345,24 @@ export default function HistoryBankPage() {
                         >
                           <Download className="mr-1 h-4 w-4" />
                           Suma goli
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={disabled || importing === `${match.id}-total_yellow_cards`}
+                          onClick={() => importMatch(match, 'total_yellow_cards')}
+                        >
+                          <Download className="mr-1 h-4 w-4" />
+                          Żółte kartki
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={disabled || importing === `${match.id}-total_corners`}
+                          onClick={() => importMatch(match, 'total_corners')}
+                        >
+                          <Download className="mr-1 h-4 w-4" />
+                          Rzuty rożne
                         </Button>
                       </div>
                     </div>

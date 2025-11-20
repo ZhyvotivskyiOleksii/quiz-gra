@@ -117,6 +117,25 @@ export function AdminShellClient({ children, initialAuth }: AdminShellProps) {
 
   const getActiveState = (itemHref: string) => (itemHref === '/admin' ? pathname === itemHref : pathname.startsWith(itemHref))
 
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return
+    const { history } = window
+    if ('scrollRestoration' in history) {
+      history.scrollRestoration = 'manual'
+    }
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+    return () => {
+      if ('scrollRestoration' in history) {
+        history.scrollRestoration = 'auto'
+      }
+    }
+  }, [])
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+  }, [pathname])
+
   return (
     <>
       <React.Suspense fallback={null}>
@@ -196,8 +215,8 @@ export function AdminShellClient({ children, initialAuth }: AdminShellProps) {
           </SidebarContent>
         </Sidebar>
         <SidebarInset>
-          <main className="flex-1 overflow-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 py-6 md:py-8">
-            <div className="mx-auto w-full max-w-screen-2xl">{children}</div>
+          <main className="flex-1 overflow-auto px-3 sm:px-5 md:px-6 lg:px-8 xl:px-10 py-6 md:py-8">
+            <div className="mx-auto w-full max-w-[1600px]">{children}</div>
           </main>
         </SidebarInset>
       </SidebarProvider>

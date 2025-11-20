@@ -11,13 +11,16 @@ import {
   SidebarMenuButton,
   SidebarFooter,
   SidebarInset,
+  SidebarTrigger,
+  useSidebar,
 } from '@/components/ui/sidebar'
-import { Play, History, LogOut, Settings as SettingsIcon, LayoutDashboard, Shield, Trophy } from 'lucide-react'
+import { Play, History, LogOut, Settings as SettingsIcon, LayoutDashboard, Shield, Trophy, Info } from 'lucide-react'
 import { usePathname, useRouter } from 'next/navigation'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { getSupabase } from '@/lib/supabaseClient'
 import { Header } from '@/components/shared/header'
 import { cn } from '@/lib/utils'
+import { LoaderOverlay } from '@/components/ui/pitch-loader'
 
 export type InitialAuthState = {
   email?: string
@@ -45,6 +48,8 @@ export function AppShellClient({ children, initialAuth }: AppShellClientProps) {
   const [displayName, setDisplayName] = React.useState<string | undefined>(initialAuth.displayName || undefined)
   const [needsPhone, setNeedsPhone] = React.useState<boolean>(initialAuth.needsPhone ?? false)
   const [isAdmin, setIsAdmin] = React.useState<boolean>(initialAuth.isAdmin ?? false)
+  const [bootstrapping, setBootstrapping] = React.useState(true)
+  const [routeLoading, setRouteLoading] = React.useState(false)
 
   React.useEffect(() => {
     const supabase = getSupabase()
@@ -72,36 +77,22 @@ export function AppShellClient({ children, initialAuth }: AppShellClientProps) {
       const fallbackName = `${fn} ${ln}`.trim() || (emailFromUser?.split('@')[0] ?? 'User')
       setDisplayName((prev) => prev ?? fallbackName)
 
-      try {
-        const hasPhone = !!(user as any).phone || !!(user.user_metadata as any)?.phone
-        const phoneConfirmed =
-          Boolean((user as any).phone_confirmed_at) || Boolean((user.user_metadata as any)?.phone_confirmed_at)
-        setNeedsPhone(!hasPhone || !phoneConfirmed)
-      } catch {
-        setNeedsPhone(false)
-      }
-
-      try {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('avatar_url, display_name, is_admin, phone, phone_confirmed_at')
-          .eq('id', user.id)
-          .maybeSingle()
-        if (profile?.avatar_url) setAvatarUrl(profile.avatar_url as any)
-        if (profile?.display_name) setDisplayName((profile.display_name as any) || fallbackName)
-        if (typeof profile?.is_admin === 'boolean') setIsAdmin(Boolean(profile.is_admin))
-        const hasPhone =
-          Boolean(profile?.phone) || Boolean((user as any).phone) || Boolean((user.user_metadata as any)?.phone)
-        const phoneConfirmed = Boolean(profile?.phone_confirmed_at) || Boolean((user as any).phone_confirmed_at)
-        setNeedsPhone(!hasPhone || !phoneConfirmed)
-      } catch {}
+      const hasPhone =
+        Boolean((user as any).phone) || Boolean((user.user_metadata as any)?.phone)
+      const phoneConfirmed =
+        Boolean((user as any).phone_confirmed_at) || Boolean((user.user_metadata as any)?.phone_confirmed_at)
+      setNeedsPhone(!hasPhone || !phoneConfirmed)
     }
 
     ;(async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      await hydrate(user)
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+        await hydrate(user)
+      } finally {
+        setBootstrapping(false)
+      }
     })()
 
     const { data: sub } = supabase.auth.onAuthStateChange((_evt, session) => {
@@ -116,10 +107,15 @@ export function AppShellClient({ children, initialAuth }: AppShellClientProps) {
     { href: '/app', label: 'Panel', icon: LayoutDashboard },
     { href: '/app/play', label: 'SuperGame', icon: Play },
     { href: '/app/history', label: 'Historia', icon: History },
+    { href: '/app/info', label: 'Info', icon: Info },
     { href: '/app/results', label: 'Wyniki', icon: Trophy },
   ]
 
-  const handleNavigate = (href: string) => router.push(href)
+  const handleNavigate = (href: string) => {
+    if (href === pathname) return
+    setRouteLoading(true)
+    router.push(href)
+  }
 
   const handleLogout = async () => {
     const s = getSupabase()
@@ -144,17 +140,40 @@ export function AppShellClient({ children, initialAuth }: AppShellClientProps) {
   }
 
   const isPlayScreen = pathname?.startsWith('/app/quizzes/') && pathname?.includes('/play')
-  const defaultPaddingX = 'px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16'
+  const defaultPaddingX = 'px-3 sm:px-5 md:px-7 lg:px-10 xl:px-16'
+  const previousPathRef = React.useRef(pathname)
+
+  React.useEffect(() => {
+    if (previousPathRef.current !== pathname) {
+      previousPathRef.current = pathname
+      setRouteLoading(false)
+    }
+  }, [pathname])
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return
+    const { history } = window
+    if ('scrollRestoration' in history) {
+      history.scrollRestoration = 'manual'
+    }
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+    return () => {
+      if ('scrollRestoration' in history) {
+        history.scrollRestoration = 'auto'
+      }
+    }
+  }, [])
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+  }, [pathname])
 
   return (
-    <div className="relative min-h-svh w-full overflow-hidden bg-[#050611]">
-      <div aria-hidden className="pointer-events-none absolute inset-0">
-        <div className="absolute inset-0 bg-[#050611]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(187,155,255,0.25),transparent_55%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_85%_5%,rgba(255,106,39,0.2),transparent_55%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom,rgba(10,12,28,0.85),rgba(5,6,17,1))]" />
-      </div>
-      <div className="relative z-10 flex min-h-svh flex-col">
+    <>
+      <LoaderOverlay show={bootstrapping || routeLoading} message={routeLoading ? 'Przełączamy widok…' : 'Ładujemy Twój panel…'} />
+      <div className="relative min-h-svh w-full overflow-hidden">
+        <div className="relative z-10 flex min-h-svh flex-col">
         <React.Suspense fallback={null}>
           <Header
             initialAuth={{
@@ -169,119 +188,174 @@ export function AppShellClient({ children, initialAuth }: AppShellClientProps) {
           />
         </React.Suspense>
         <SidebarProvider>
-          <Sidebar collapsible={isMobile ? 'offcanvas' : 'icon'} className="border-0 bg-transparent sidebar-glass">
+          <Sidebar collapsible={isMobile ? 'offcanvas' : 'icon'} className="border-0 bg-transparent sidebar-glass text-white">
             <SidebarHeader />
             <SidebarContent className="pt-20 pb-4 flex flex-col">
-              <div className="mx-2 mb-2 rounded-2xl bg-card text-card-foreground border border-border shadow-sm px-3 py-2 flex items-center justify-between">
+              <div className="mx-2 mb-2 rounded-2xl bg-card text-card-foreground border border-border shadow-sm px-4 py-3">
                 <button
                   type="button"
                   onClick={() => handleNavigate('/app')}
-                  className="flex items-center gap-2 text-sm font-semibold text-foreground/90 hover:text-foreground"
+                  className="flex w-full items-center justify-end text-sm font-semibold text-foreground/90 hover:text-foreground"
                 >
-                  <LayoutDashboard className="h-4 w-4" />
-                  <span>Panel gracza</span>
+                  <span className="text-base uppercase tracking-[0.4em] text-white/70">Panel Gracza</span>
                 </button>
-                <span
-                  aria-label="status"
-                  className="inline-block h-2.5 w-2.5 rounded-full bg-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.15)]"
-                />
               </div>
 
-              <div className="mx-2 rounded-2xl bg-card border border-border shadow-sm p-2 flex flex-col flex-1">
-                <SidebarMenu>
-                  {menuItems.map((item) => (
-                    <SidebarMenuItem key={item.href}>
-                      <SidebarMenuButton
-                        onClick={() => handleNavigate(item.href)}
-                        isActive={getActiveState(item.href)}
-                        tooltip={{ children: item.label, side: 'right', align: 'center' }}
-                        variant="bubble"
-                        size="lg"
-                        className="justify-start text-foreground/85 hover:text-red-500"
-                      >
-                        <item.icon className="h-4 w-4" />
-                        <span>{item.label}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-                <SidebarMenu className="mt-auto pt-4 pb-[60px] space-y-2">
-                  {isAdmin && (
-                    <SidebarMenuItem>
-                      <SidebarMenuButton
-                        onClick={() => handleNavigate('/admin')}
-                        isActive={pathname?.startsWith('/admin')}
-                        tooltip={{ children: 'Admin panel', side: 'right', align: 'center' }}
-                        variant="bubble"
-                        size="lg"
-                        className="justify-start text-foreground/85 hover:text-red-500"
-                      >
-                        <Shield className="h-4 w-4" />
-                        <span>Admin</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  )}
-                  <SidebarMenuItem>
-                    <SidebarMenuButton
-                      onClick={() => handleNavigate('/app/settings?tab=phone')}
-                      isActive={getActiveState('/app/settings')}
-                      tooltip={{
-                        children: needsPhone ? 'Dodaj i potwierdź numer telefonu' : 'Ustawienia',
-                        side: 'right',
-                        align: 'center',
-                      }}
-                      variant="bubble"
-                      size="lg"
-                      className="justify-start text-foreground/85 hover:text-red-500"
-                    >
-                      <SettingsIcon className="h-4 w-4" />
-                      <span>Ustawienia</span>
-                  {needsPhone && (
-                    <span
-                      aria-label="Wymaga uwagi"
-                      title="Wymagana weryfikacja telefonu"
-                      className="ml-2 inline-flex h-5 w-5 items-center justify-center rounded-md bg-destructive text-destructive-foreground text-[12px] font-extrabold leading-none shadow-sm group-data-[collapsible=icon]:hidden animate-vibrate"
-                    >
-                      !
-                    </span>
-                  )}
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton
-                      onClick={handleLogout}
-                      tooltip={{ children: 'Wyloguj', side: 'right', align: 'center' }}
-                      variant="bubble"
-                      size="lg"
-                      className="justify-start text-foreground/85 hover:text-red-500"
-                    >
-                      <LogOut className="h-4 w-4" />
-                      <span>Wyloguj</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                </SidebarMenu>
+              <div className="mx-2 rounded-2xl p-2 flex flex-col flex-1">
+                <PlayerSidebarNav
+                  menuItems={menuItems}
+                  isAdmin={isAdmin}
+                  needsPhone={needsPhone}
+                  handleNavigate={handleNavigate}
+                  handleLogout={handleLogout}
+                  getActiveState={getActiveState}
+                />
               </div>
             </SidebarContent>
             <SidebarFooter className="border-0 p-2 text-xs text-white/60">
-              <div className="rounded-2xl border border-white/5 bg-white/5 px-3 py-2 text-center">
-                <p className="font-semibold text-white">Obsługa 24/7</p>
-                <p className="text-[11px] text-white/70">support@quiz-time.pl</p>
+              <div className="flex items-center gap-4 rounded-3xl border border-white/10 bg-gradient-to-br from-white/10 to-white/[0.02] px-4 py-3 shadow-[0_18px_45px_rgba(3,4,12,0.45)]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/icon/support.svg"
+                  alt="Support"
+                  className="h-8 w-8 rounded-full border border-white/30 bg-gradient-to-br from-[#f97316] via-[#fb7185] to-[#8b5cf6] p-1 shadow-[0_12px_28px_rgba(249,113,22,0.35)]"
+                />
+                <div className="flex flex-col leading-tight text-left">
+                  <p className="text-[13px] font-semibold text-white">Obsługa 24/7</p>
+                  <p className="text-[11px] text-white/70 tracking-wide">support@quiz-time.pl</p>
+                </div>
               </div>
             </SidebarFooter>
           </Sidebar>
-          <SidebarInset className={cn(isPlayScreen ? 'flex-1 overflow-hidden' : undefined)}>
-            {isPlayScreen ? (
-              <main className="flex h-full w-full overflow-hidden py-6 px-0">
-                <div className="mx-auto flex h-full w-full max-w-[1400px] overflow-hidden">{children}</div>
-              </main>
-            ) : (
-              <main className={cn('flex-1 overflow-auto py-8', defaultPaddingX)}>
-                <div className="mx-auto w-full max-w-[1500px]">{children}</div>
-              </main>
-            )}
+          <SidebarInset className="relative bg-transparent">
+            <SidebarTrigger
+              className="fixed left-4 top-[88px] z-30 flex h-11 w-11 items-center justify-center rounded-2xl border border-white/20 bg-black/40 text-white shadow-[0_15px_35px_rgba(3,2,12,0.55)] backdrop-blur-md sm:hidden"
+              aria-label="Otwórz menu"
+            />
+            <main className={cn('flex-1 overflow-auto py-8', isPlayScreen ? 'px-0' : defaultPaddingX)}>
+              <div className={cn('relative z-10 mx-auto w-full', isPlayScreen ? 'max-w-[1400px]' : 'max-w-[1500px]')}>
+                {children}
+              </div>
+            </main>
           </SidebarInset>
         </SidebarProvider>
       </div>
     </div>
+    </>
+  )
+}
+
+type PlayerSidebarNavProps = {
+  menuItems: { href: string; label: string; icon: any }[]
+  isAdmin: boolean
+  needsPhone: boolean
+  handleNavigate: (href: string) => void
+  handleLogout: () => void
+  getActiveState: (href: string) => boolean
+}
+
+function PlayerSidebarNav({
+  menuItems,
+  isAdmin,
+  needsPhone,
+  handleNavigate,
+  handleLogout,
+  getActiveState,
+}: PlayerSidebarNavProps) {
+  const { setOpenMobile } = useSidebar()
+  const isMobile = useIsMobile()
+
+  const closeMobile = React.useCallback(() => {
+    if (isMobile) setOpenMobile(false)
+  }, [isMobile, setOpenMobile])
+
+  const navigateAndClose = React.useCallback(
+    (href: string) => {
+      handleNavigate(href)
+      closeMobile()
+    },
+    [handleNavigate, closeMobile],
+  )
+
+  const logoutAndClose = React.useCallback(() => {
+    closeMobile()
+    handleLogout()
+  }, [closeMobile, handleLogout])
+
+  return (
+    <>
+      <SidebarMenu>
+        {menuItems.map((item) => (
+          <SidebarMenuItem key={item.href}>
+            <SidebarMenuButton
+              onClick={() => navigateAndClose(item.href)}
+              isActive={getActiveState(item.href)}
+              tooltip={{ children: item.label, side: 'right', align: 'center' }}
+              variant="bubble"
+              size="lg"
+              className="justify-start text-foreground/85 hover:text-red-500"
+            >
+              <item.icon className="h-4 w-4" />
+              <span>{item.label}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        ))}
+      </SidebarMenu>
+      <SidebarMenu className="mt-auto pt-4 pb-[60px] space-y-2">
+        {isAdmin && (
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              onClick={() => navigateAndClose('/admin')}
+              isActive={getActiveState('/admin')}
+              tooltip={{ children: 'Admin panel', side: 'right', align: 'center' }}
+              variant="bubble"
+              size="lg"
+              className="justify-start text-foreground/85 hover:text-red-500"
+            >
+              <Shield className="h-4 w-4" />
+              <span>Admin</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        )}
+        <SidebarMenuItem>
+          <SidebarMenuButton
+            onClick={() => navigateAndClose('/app/settings?tab=phone')}
+            isActive={getActiveState('/app/settings')}
+            tooltip={{
+              children: needsPhone ? 'Dodaj i potwierdź numer telefonu' : 'Ustawienia',
+              side: 'right',
+              align: 'center',
+            }}
+            variant="bubble"
+            size="lg"
+            className="justify-start text-foreground/85 hover:text-red-500"
+          >
+            <SettingsIcon className="h-4 w-4" />
+            <span>Ustawienia</span>
+            {needsPhone && (
+              <span
+                aria-label="Wymaga uwagi"
+                title="Wymagana weryfikacja telefonu"
+                className="ml-2 inline-flex h-5 w-5 items-center justify-center rounded-md bg-destructive text-destructive-foreground text-[12px] font-extrabold leading-none shadow-sm group-data-[collapsible=icon]:hidden animate-vibrate"
+              >
+                !
+              </span>
+            )}
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+        <SidebarMenuItem>
+          <SidebarMenuButton
+            onClick={logoutAndClose}
+            tooltip={{ children: 'Wyloguj', side: 'right', align: 'center' }}
+            variant="bubble"
+            size="lg"
+            className="justify-start text-foreground/85 hover:text-red-500"
+          >
+            <LogOut className="h-4 w-4" />
+            <span>Wyloguj</span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      </SidebarMenu>
+    </>
   )
 }

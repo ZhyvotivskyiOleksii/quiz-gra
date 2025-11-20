@@ -52,6 +52,8 @@ export type QuestionKind =
   | 'history_numeric'
   | 'future_1x2'
   | 'future_score'
+  | 'future_yellow_cards'
+  | 'future_corners'
 
 export type QuizQuestion = {
   id: string
@@ -88,4 +90,3 @@ export type QuizResult = {
   rank: number | null
   data: any
 }
-

@@ -29,9 +29,23 @@ import {
   distributePrizeByDefaultRatios,
   type PrizeBracketRow,
 } from '@/lib/prizeBrackets'
-import { buildHistoryQuestionFromEntry, type HistoryBankEntry } from '@/lib/historyBank'
+import { buildHistoryQuestionFromEntry, type HistoryBankEntry, type HistoryQuestionTemplate } from '@/lib/historyBank'
+import { LoaderOverlay } from '@/components/ui/pitch-loader'
 
-type SlotKind = 'history_single'|'history_numeric'|'future_1x2'|'future_score'
+const FUTURE_STAT_KINDS = ['future_yellow_cards', 'future_corners'] as const
+type FutureStatKind = (typeof FUTURE_STAT_KINDS)[number]
+type SlotKind = 'history_single' | 'history_numeric' | 'future_1x2' | 'future_score' | FutureStatKind
+
+const FUTURE_STAT_DEFAULTS: Record<FutureStatKind, { prompt: string; numeric: { min: number; max: number; step: number } }> = {
+  future_yellow_cards: {
+    prompt: 'Ile żółtych kartek padnie w meczu?',
+    numeric: { min: 0, max: 12, step: 1 },
+  },
+  future_corners: {
+    prompt: 'Ile rzutów rożnych zobaczymy w meczu?',
+    numeric: { min: 0, max: 20, step: 1 },
+  },
+}
 
 export default function NewQuizPage() {
   const router = useRouter()
@@ -68,24 +82,54 @@ export default function NewQuizPage() {
     score?: { min_home: number; max_home: number; min_away: number; max_away: number }
     correct?: any
     bank_entry_id?: string | null
+    auto_prompt?: boolean
+    meta?: {
+      scoreLabel?: string | null
+    }
   }
   const [slots, setSlots] = React.useState<Slot[]>([
-    { kind: 'history_single', prompt: '', options: [''], bank_entry_id: null },
-    { kind: 'history_single', prompt: '', options: [''], bank_entry_id: null },
-    { kind: 'history_numeric', prompt: 'Ile goli padło w meczu?', numeric: { min: 0, max: 6, step: 1 }, bank_entry_id: null },
+    { kind: 'history_single', prompt: defaultPrompt('history_single'), options: [''], bank_entry_id: null },
+    { kind: 'history_single', prompt: defaultPrompt('history_single'), options: [''], bank_entry_id: null },
+    {
+      kind: 'history_numeric',
+      prompt: defaultPrompt('history_numeric'),
+      numeric: getDefaultNumericConfig('history_numeric'),
+      bank_entry_id: null,
+    },
   ])
   // Predictions: 3 manual future questions
-  const [predictions, setPredictions] = React.useState<Slot[]>([
-    { kind: 'future_1x2', prompt: '', options: ['1','X','2'] },
-    { kind: 'future_1x2', prompt: '', options: ['1','X','2'] },
-    { kind: 'future_score', prompt: '', score: { min_home: 0, max_home: 10, min_away: 0, max_away: 10 } },
+  const AUTO_PREDICTION_SEQUENCE: SlotKind[] = ['future_1x2', 'future_yellow_cards', 'future_score']
+  const [predictions, setPredictions] = React.useState<Slot[]>(() => [
+    createDefaultPrediction('future_1x2', 0),
+    createDefaultPrediction('future_yellow_cards', 1),
+    createDefaultPrediction('future_score', 2),
   ])
   const activeMatches = matchesLeagueId === leagueId ? matches : []
+  const findMatchById = React.useCallback(
+    (id?: string | null) => {
+      if (!id) return null
+      return activeMatches.find((m) => m.id === id) || null
+    },
+    [activeMatches],
+  )
   const [selectedMatchId, setSelectedMatchId] = React.useState<string | null>(null)
   const [matchesCollapsed, setMatchesCollapsed] = React.useState(false)
   const selectedMatch = selectedMatchId ? activeMatches.find((m) => m.id === selectedMatchId) : null
   const prizeBracketsTotal = React.useMemo(() => sumPrizePools(prizeBrackets), [prizeBrackets])
   const [historyAutoLoading, setHistoryAutoLoading] = React.useState(false)
+  const globalLoading = saving || (leaguesLoading && !leagues.length)
+  const loaderMessage = saving ? 'Tworzymy nową wiktorynę…' : 'Ładujemy dane ligi…'
+
+  function createDefaultPrediction(kind: SlotKind, index: number, match?: ScoreBusterMatch | null): Slot {
+    return {
+      kind,
+      prompt: getFuturePrompt(kind, index, match),
+      options: kind === 'future_1x2' ? ['1', 'X', '2'] : undefined,
+      score: kind === 'future_score' ? { min_home: 0, max_home: 10, min_away: 0, max_away: 10 } : undefined,
+      numeric: isFutureStatKind(kind) ? getDefaultNumericConfig(kind) : undefined,
+      auto_prompt: true,
+    }
+  }
 
   function addPrizeBracketRow() {
     setPrizeBrackets((prev) => [
@@ -110,6 +154,11 @@ export default function NewQuizPage() {
       return prev.filter((row) => row.id !== id)
     })
   }
+
+  const handlePrizeChange = React.useCallback((value: string) => {
+    const sanitized = value.replace(/[^0-9]/g, '')
+    setPrize(sanitized)
+  }, [])
 
   React.useEffect(() => { loadLeagues() }, [])
 
@@ -258,7 +307,7 @@ export default function NewQuizPage() {
       const s = getSupabase()
       const { data, error } = await s
         .from('history_question_bank')
-        .select('id,template,home_team,away_team,home_score,away_score,played_at')
+        .select('id,template,home_team,away_team,home_score,away_score,played_at,payload')
         .eq('status', 'ready')
         .order('played_at', { ascending: false, nullsLast: false })
         .limit(20)
@@ -268,12 +317,38 @@ export default function NewQuizPage() {
         return
       }
       const shuffled = [...data].sort(() => Math.random() - 0.5)
+      const templatePriority: HistoryQuestionTemplate[] = ['winner_1x2', 'total_goals', 'total_yellow_cards', 'total_corners']
+      const buckets = shuffled.reduce((acc, entry) => {
+        const key = entry.template as HistoryQuestionTemplate
+        acc[key] = acc[key] || []
+        acc[key]!.push(entry)
+        return acc
+      }, {} as Record<HistoryQuestionTemplate, HistoryBankEntry[] | undefined>)
+      const usedTemplates = new Set<HistoryQuestionTemplate>()
+      const pickEntryForIndex = (): HistoryBankEntry | undefined => {
+        const prioritized = [...templatePriority.filter(t => !usedTemplates.has(t)), ...templatePriority]
+        for (const tmpl of prioritized) {
+          const bucket = buckets[tmpl]
+          if (bucket?.length) {
+            const chosen = bucket.shift()
+            if (chosen) usedTemplates.add(tmpl)
+            return chosen
+          }
+        }
+        for (const bucket of Object.values(buckets)) {
+          if (bucket?.length) {
+            return bucket.shift()
+          }
+        }
+        return undefined
+      }
+
       setSlots((prev) =>
         prev.map((slot, idx) => {
-          const entry = shuffled[idx] as HistoryBankEntry | undefined
-          if (!entry) return { ...slot, bank_entry_id: null }
+          const entry = pickEntryForIndex() ?? (shuffled[idx] as HistoryBankEntry | undefined)
+          if (!entry) return { ...slot, bank_entry_id: null, meta: undefined }
           const generated = buildHistoryQuestionFromEntry(entry)
-          if (!generated) return { ...slot, bank_entry_id: null }
+          if (!generated) return { ...slot, bank_entry_id: null, meta: undefined }
           if (generated.kind === 'history_single') {
             const optionsArray = Array.isArray(generated.options) ? generated.options : ['1', 'X', '2']
             return {
@@ -284,6 +359,7 @@ export default function NewQuizPage() {
               numeric: undefined,
               correct: generated.correct,
               bank_entry_id: entry.id,
+              meta: generated.meta,
             }
           }
           const numericOptions = generated.options || { min: 0, max: 6, step: 1 }
@@ -295,6 +371,7 @@ export default function NewQuizPage() {
             options: undefined,
             correct: generated.correct,
             bank_entry_id: entry.id,
+            meta: generated.meta,
           }
         }),
       )
@@ -352,16 +429,17 @@ export default function NewQuizPage() {
       const payload = all.map((sl:any, idx:number) => {
         let options: any = null
         if (sl.kind === 'history_single' || sl.kind === 'future_1x2') options = sl.options || null
-        if (sl.kind === 'history_numeric') options = sl.numeric || { min: 0, max: 6, step: 1 }
+        if (sl.kind === 'history_numeric') options = sl.numeric || getDefaultNumericConfig('history_numeric')
+        if (isFutureStatKind(sl.kind)) options = sl.numeric || getDefaultNumericConfig(sl.kind)
         if (sl.kind === 'future_score') options = sl.score || sl.options || { min_home: 0, max_home: 10, min_away: 0, max_away: 10 }
         const prompt = sl.prompt && sl.prompt.trim().length ? sl.prompt : defaultPrompt(sl.kind)
         const autoCorrect = requiresExternalMatch(sl.kind)
         const correctValue = autoCorrect ? null : (typeof sl.correct === 'undefined' ? null : sl.correct)
-        if ((sl.kind === 'future_1x2' || sl.kind === 'future_score') && !sl.match_id) {
+        if (requiresExternalMatch(sl.kind) && !sl.match_id) {
           throw new Error('Wybierz mecz dla każdego pytania przyszłościowego.')
         }
         const match_id = shouldAttachMatch(sl.kind) ? normalizeMatchId(sl.match_id, matchIdMap) : null
-        if ((sl.kind === 'future_1x2' || sl.kind === 'future_score') && !match_id) {
+        if (requiresExternalMatch(sl.kind) && !match_id) {
           throw new Error('Nie udało się powiązać pytania z wybranym meczem. Spróbuj ponownie po odświeżeniu listy spotkań.')
         }
         return {
@@ -393,15 +471,28 @@ export default function NewQuizPage() {
   }
 
   function setKind(i:number, k: SlotKind) {
-    setSlots(prev => prev.map((s,idx)=> idx===i ? ({ ...s, kind: k,
-      prompt: k==='future_1x2' ? 'Kto wygra mecz?' : k==='future_score' ? 'Jaki będzie dokładny wynik?' : s.prompt,
-      options: (k==='history_single'||k==='future_1x2') ? (k==='future_1x2' ? ['1','X','2'] : (s.options||[''])) : undefined,
-      match_id: (k==='future_1x2'||k==='future_score'||k==='history_numeric') ? (s.match_id||null) : null,
-      numeric: k==='history_numeric' ? (s.numeric || { min:0, max:6, step:1 }) : undefined,
-      score: k==='future_score' ? (s.score || { min_home:0, max_home:10, min_away:0, max_away:10 }) : undefined,
-      correct: (k==='history_single'||k==='history_numeric') ? null : undefined,
-      bank_entry_id: k.startsWith('history') ? s.bank_entry_id ?? null : null,
-    }) : s))
+    setSlots(prev =>
+      prev.map((s, idx) => {
+        if (idx !== i) return s
+        const needsNumeric = k === 'history_numeric' || isFutureStatKind(k)
+        return {
+          ...s,
+          kind: k,
+          prompt: s.prompt?.trim().length ? s.prompt : defaultPrompt(k),
+          options:
+            k === 'history_single'
+              ? (Array.isArray(s.options) && s.options.length ? s.options : [''])
+              : k === 'future_1x2'
+                ? ['1', 'X', '2']
+                : undefined,
+          match_id: shouldAttachMatch(k) ? s.match_id || null : null,
+          numeric: needsNumeric ? s.numeric || getDefaultNumericConfig(k) : undefined,
+          score: k === 'future_score' ? s.score || { min_home: 0, max_home: 10, min_away: 0, max_away: 10 } : undefined,
+          correct: k === 'history_single' || k === 'history_numeric' ? null : undefined,
+          bank_entry_id: k.startsWith('history') ? s.bank_entry_id ?? null : null,
+        }
+      }),
+    )
   }
   function updateSlot(i:number, data: Partial<Slot>) { setSlots(prev => prev.map((s,idx)=> idx===i ? ({ ...s, ...data }) : s)) }
   function addOption(i:number) { setSlots(prev => prev.map((s,idx)=> idx===i ? ({ ...s, options: [...(s.options||[]), ''] }) : s)) }
@@ -420,51 +511,141 @@ export default function NewQuizPage() {
   function removeSlot(i:number) { setSlots(prev => { const arr = prev.filter((_,idx)=> idx!==i); while (arr.length<3) arr.push(defaultSlot()); return arr }) }
 
   // For predictions
+  const normalizePredictionSlotForKind = React.useCallback(
+    (slot: Slot, idx: number, kind: SlotKind): Slot => {
+      const needsNumeric = isFutureStatKind(kind)
+      const shouldLinkMatch = shouldAttachMatch(kind)
+      const fallbackMatchId = shouldLinkMatch ? (slot.match_id || selectedMatchId || null) : null
+      const matchData = shouldLinkMatch ? findMatchById(fallbackMatchId) : null
+      const lockedPrompt = shouldLockPrompt(kind)
+      const basePrompt = getFuturePrompt(kind, idx, matchData)
+      const prompt =
+        lockedPrompt || slot.auto_prompt !== false
+          ? basePrompt
+          : slot.prompt?.trim().length
+            ? slot.prompt
+            : basePrompt
+      return {
+        ...slot,
+        kind,
+        prompt,
+        options: kind === 'future_1x2' ? ['1', 'X', '2'] : undefined,
+        match_id: fallbackMatchId,
+        numeric: needsNumeric ? slot.numeric || getDefaultNumericConfig(kind) : undefined,
+        score:
+          kind === 'future_score'
+            ? slot.score || { min_home: 0, max_home: 10, min_away: 0, max_away: 10 }
+            : undefined,
+        correct: kind === slot.kind ? slot.correct : null,
+        auto_prompt: lockedPrompt ? true : slot.auto_prompt,
+      }
+    },
+    [findMatchById, selectedMatchId],
+  )
+
   function setPredictionKind(i:number, k: SlotKind) {
-    setPredictions(prev => prev.map((s,idx)=> idx===i ? ({ ...s, kind: k,
-      prompt: k==='future_1x2' ? 'Kto wygra mecz?' : k==='future_score' ? 'Jaki będzie dokładny wynik?' : s.prompt,
-      options: (k==='history_single'||k==='future_1x2') ? (k==='future_1x2' ? ['1','X','2'] : (s.options||[''])) : undefined,
-      match_id: (k==='future_1x2'||k==='future_score'||k==='history_numeric') ? (s.match_id||null) : null,
-      numeric: k==='history_numeric' ? (s.numeric || { min:0, max:6, step:1 }) : undefined,
-      score: k==='future_score' ? (s.score || { min_home:0, max_home:10, min_away:0, max_away:10 }) : undefined,
-      correct: null,
-    }) : s))
+    setPredictions(prev =>
+      prev.map((s, idx) => (idx === i ? normalizePredictionSlotForKind(s, idx, k) : s)),
+    )
   }
-  function updatePrediction(i:number, data: Partial<Slot>) { setPredictions(prev => prev.map((s,idx)=> idx===i ? ({ ...s, ...data }) : s)) }
+  function updatePrediction(i:number, data: Partial<Slot>) {
+    setPredictions(prev =>
+      prev.map((s, idx) => {
+        if (idx !== i) return s
+        let next: Slot = { ...s, ...data }
+        const isLocked = shouldLockPrompt(next.kind)
+        if (isLocked) {
+          next.prompt = getFuturePrompt(next.kind, idx, findMatchById(next.match_id))
+          next.auto_prompt = true
+        }
+        if (typeof data.prompt !== 'undefined' && !isLocked) {
+          next.auto_prompt = false
+        }
+        const matchChanged = Object.prototype.hasOwnProperty.call(data, 'match_id')
+        if (matchChanged && next.auto_prompt !== false && shouldAttachMatch(next.kind)) {
+          const match = findMatchById(next.match_id)
+          next.prompt = getFuturePrompt(next.kind, idx, match)
+          next.auto_prompt = true
+        }
+        return next
+      }),
+    )
+  }
   function addPredictionOption(i:number) { setPredictions(prev => prev.map((s,idx)=> idx===i ? ({ ...s, options: [...(s.options||[]), ''] }) : s)) }
   function setPredictionOption(i:number, j:number, v:string) { setPredictions(prev => prev.map((s,idx)=> idx===i ? ({ ...s, options: (s.options||[]).map((o,k)=> k===j ? v : o) }) : s)) }
   function removePredictionOption(i:number, j:number) { setPredictions(prev => prev.map((s,idx)=> idx===i ? ({ ...s, options: (s.options||[]).filter((_,k)=>k!==j) }) : s)) }
   function autoFillPredictions() {
     if (!activeMatches.length) return
-    setPredictions(prev =>
+    const chosen = selectedMatchId
+      ? activeMatches.find((m) => m.id === selectedMatchId)
+      : activeMatches[0]
+    if (!chosen) return
+    setPredictions((prev) =>
       prev.map((slot, idx) => {
-        const match = activeMatches[idx] || activeMatches[0]
+        const targetKind = AUTO_PREDICTION_SEQUENCE[idx % AUTO_PREDICTION_SEQUENCE.length] ?? slot.kind
+        const prepared = slot.kind === targetKind ? slot : normalizePredictionSlotForKind(slot, idx, targetKind)
+        if (shouldLockPrompt(prepared.kind)) {
+          return {
+            ...prepared,
+            match_id: chosen.id,
+            prompt: getFuturePrompt(prepared.kind, idx, chosen),
+            auto_prompt: true,
+          }
+        }
+        if (prepared.auto_prompt === false) {
+          return { ...prepared, match_id: chosen.id }
+        }
         return {
-          ...slot,
-          prompt: slot.prompt || (slot.kind === 'future_score' ? 'Jaki będzie dokładny wynik?' : 'Kto wygra mecz?'),
-          match_id: match?.id || null,
+          ...prepared,
+          match_id: chosen.id,
+          prompt: getFuturePrompt(prepared.kind, idx, chosen),
+          auto_prompt: true,
         }
       }),
     )
-    setSelectedMatchId(activeMatches[0]?.id || null)
+    if (!selectedMatchId) {
+      setSelectedMatchId(chosen.id)
+    }
     setMatchesCollapsed(true)
   }
 
   function handleMatchPick(match: ScoreBusterMatch) {
     setSelectedMatchId(match.id)
     setMatchesCollapsed(true)
+    scheduleDeadlineForMatch(match)
     setPredictions((prev) =>
-      prev.map((slot) => ({
-        ...slot,
-        prompt: slot.prompt || (slot.kind === 'future_score' ? 'Jaki będzie dokładny wynik?' : 'Kto wygra mecz?'),
-        match_id: match.id,
-      })),
+      prev.map((slot, idx) => {
+        const targetKind = AUTO_PREDICTION_SEQUENCE[idx % AUTO_PREDICTION_SEQUENCE.length] ?? slot.kind
+        const prepared = slot.kind === targetKind ? slot : normalizePredictionSlotForKind(slot, idx, targetKind)
+        if (shouldLockPrompt(prepared.kind)) {
+          return {
+            ...prepared,
+            match_id: match.id,
+            prompt: getFuturePrompt(prepared.kind, idx, match),
+            auto_prompt: true,
+          }
+        }
+        if (prepared.auto_prompt === false) {
+          return { ...prepared, match_id: match.id }
+        }
+        return {
+          ...prepared,
+          match_id: match.id,
+          prompt: getFuturePrompt(prepared.kind, idx, match),
+          auto_prompt: true,
+        }
+      }),
     )
   }
 
   function autoScheduleTimes(list: ScoreBusterMatch[]) {
     if (!list.length) return
-    const ts = eventTimestamp(list[0])
+    scheduleDeadlineForMatch(list[0])
+  }
+
+  function scheduleDeadlineForMatch(match?: ScoreBusterMatch | null) {
+    if (!match) return
+    const ts = eventTimestamp(match)
     if (!ts) return
     const deadlineTs = new Date(ts.getTime() - 15 * 60 * 1000)
     setDeadlineAt(toInputValue(deadlineTs))
@@ -491,18 +672,27 @@ export default function NewQuizPage() {
     const s = getSupabase()
     const { data: existing } = await s
       .from('matches')
-      .select('id,home_team,away_team,kickoff_at,round_label')
+      .select('id,home_team,away_team,kickoff_at,round_label,external_match_id')
       .eq('round_id', roundId)
 
     const keyToId = new Map<string, string>()
+    const externalToId = new Map<string, string>()
     ;(existing || []).forEach((row: any) => {
       keyToId.set(matchKey(row.home_team, row.away_team, row.kickoff_at), row.id)
+      if (row.external_match_id) {
+        externalToId.set(row.external_match_id, row.id)
+      }
     })
 
     const pending: { eventId: string; event: ScoreBusterMatch; kickoff: string }[] = []
     const mapping: Record<string, string> = {}
 
     for (const externalId of requiredExternal) {
+      const direct = externalToId.get(externalId)
+      if (direct) {
+        mapping[externalId] = direct
+        continue
+      }
       const event = byId.get(externalId)
       if (!event) {
         throw new Error('Wybrany mecz nie jest już dostępny. Odśwież listę spotkań i wybierz ponownie.')
@@ -520,6 +710,7 @@ export default function NewQuizPage() {
     if (pending.length) {
       const insertPayload = pending.map(({ event, kickoff }) => ({
         round_id: roundId,
+        external_match_id: event.id,
         home_team: event.homeTeam.name || 'Gospodarze',
         home_team_external_id: event.homeTeam.id ? String(event.homeTeam.id) : null,
         away_team: event.awayTeam.name || 'Goście',
@@ -530,13 +721,16 @@ export default function NewQuizPage() {
       const { data, error } = await s
         .from('matches')
         .insert(insertPayload)
-        .select('id,home_team,away_team,kickoff_at,round_label')
+        .select('id,home_team,away_team,kickoff_at,round_label,external_match_id')
       if (error) throw error
       if (!data) throw new Error('Nie udało się zapisać meczów dla quizu.')
       data.forEach((row: any, idx: number) => {
         const ref = pending[idx]
         mapping[ref.eventId] = row.id
         keyToId.set(matchKey(row.home_team, row.away_team, row.kickoff_at), row.id)
+        if (row.external_match_id) {
+          externalToId.set(row.external_match_id, row.id)
+        }
       })
     }
 
@@ -616,7 +810,9 @@ function curateRecentResults(matches: ScoreBusterMatch[] | undefined, limit: num
 }
 
   return (
-    <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6 max-w-7xl">
+    <>
+      <LoaderOverlay show={globalLoading} message={loaderMessage} />
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6 max-w-7xl">
       {/* Top row: meta form + preview side by side */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-8">
         <Card>
@@ -787,7 +983,14 @@ function curateRecentResults(matches: ScoreBusterMatch[] | undefined, limit: num
                   </div>
                 </div>
               </div>
-              <NotchedInput borderless type="number" label={'Nagroda (zł)'} value={prize} onChange={(e:any)=>setPrize(e.target.value)} />
+              <NotchedInput
+                borderless
+                inputMode="numeric"
+                pattern="[0-9]*"
+                label={'Nagroda (zł)'}
+                value={prize}
+                onChange={(e:any)=>handlePrizeChange(e.target.value)}
+              />
               <div className="flex items-center gap-2">
                 <label className="flex items-center gap-2 text-sm">
                   <input type="checkbox" checked={publishNow} onChange={(e)=>setPublishNow(e.target.checked)} />
@@ -878,6 +1081,11 @@ function curateRecentResults(matches: ScoreBusterMatch[] | undefined, limit: num
                     </Select>
                   </div>
                   <NotchedInput borderless label={'Treść pytania'} value={sl.prompt} onChange={(e:any)=>updateSlot(i,{ prompt: e.target.value })} />
+                  {sl.meta?.scoreLabel && (
+                    <p className="text-xs text-white/60">
+                      Wynik meczu: <span className="font-semibold text-white">{sl.meta.scoreLabel}</span>
+                    </p>
+                  )}
                 </div>
                 {sl.kind==='history_single' && (
                   <div className="mt-2">
@@ -946,6 +1154,9 @@ function curateRecentResults(matches: ScoreBusterMatch[] | undefined, limit: num
           <CardContent className="space-y-3">
             {predictions.map((pr, i) => {
               const selectedMatch = activeMatches.find((m) => m.id === pr.match_id)
+              const promptValue = shouldLockPrompt(pr.kind)
+                ? pr.prompt || getFuturePrompt(pr.kind, i, findMatchById(pr.match_id))
+                : pr.prompt
               return (
                 <div key={i} className="rounded-lg border border-border/40 p-3 space-y-3">
                   <div className="text-sm font-medium">Predykcja #{i+1}</div>
@@ -959,10 +1170,18 @@ function curateRecentResults(matches: ScoreBusterMatch[] | undefined, limit: num
                         <SelectContent className="text-sm">
                           <SelectItem value="future_1x2">1X2 (przyszłość)</SelectItem>
                           <SelectItem value="future_score">Dokładny wynik</SelectItem>
+                          <SelectItem value="future_yellow_cards">Żółte kartki (łączna liczba)</SelectItem>
+                          <SelectItem value="future_corners">Rzuty rożne (łączna liczba)</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
-                    <NotchedInput borderless label={'Treść pytania'} value={pr.prompt} onChange={(e:any)=>updatePrediction(i,{ prompt: e.target.value })} />
+                    <NotchedInput
+                      borderless
+                      label={'Treść pytania'}
+                      value={promptValue ?? ''}
+                      disabled={shouldLockPrompt(pr.kind)}
+                      onChange={(e:any)=>updatePrediction(i,{ prompt: e.target.value })}
+                    />
                     <div>
                       <Label>Mecz</Label>
                       <Select value={pr.match_id || ''} onValueChange={(v)=>updatePrediction(i,{ match_id: v || null })}>
@@ -1006,6 +1225,31 @@ function curateRecentResults(matches: ScoreBusterMatch[] | undefined, limit: num
                       <NotchedInput borderless type="number" label={'Max (goście)'} value={pr.score?.max_away ?? 10} onChange={(e:any)=>updatePrediction(i,{ score: { ...(pr.score||{}), max_away: parseInt(e.target.value||'10'), min_home: pr.score?.min_home ?? 0, max_home: pr.score?.max_home ?? 10, min_away: pr.score?.min_away ?? 0 } })} />
                     </div>
                   )}
+                  {isFutureStatKind(pr.kind) && (
+                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <NotchedInput
+                        borderless
+                        type="number"
+                        label={'Min'}
+                        value={pr.numeric?.min ?? getDefaultNumericConfig(pr.kind)?.min ?? 0}
+                        onChange={(e:any)=>updatePrediction(i,{ numeric: { ...(pr.numeric||{}), min: parseInt(e.target.value||'0'), max: pr.numeric?.max ?? getDefaultNumericConfig(pr.kind)?.max ?? 10, step: pr.numeric?.step ?? 1 } })}
+                      />
+                      <NotchedInput
+                        borderless
+                        type="number"
+                        label={'Max'}
+                        value={pr.numeric?.max ?? getDefaultNumericConfig(pr.kind)?.max ?? 10}
+                        onChange={(e:any)=>updatePrediction(i,{ numeric: { ...(pr.numeric||{}), max: parseInt(e.target.value||'10'), min: pr.numeric?.min ?? getDefaultNumericConfig(pr.kind)?.min ?? 0, step: pr.numeric?.step ?? 1 } })}
+                      />
+                      <NotchedInput
+                        borderless
+                        type="number"
+                        label={'Krok'}
+                        value={pr.numeric?.step ?? 1}
+                        onChange={(e:any)=>updatePrediction(i,{ numeric: { ...(pr.numeric||{}), step: parseInt(e.target.value||'1'), min: pr.numeric?.min ?? getDefaultNumericConfig(pr.kind)?.min ?? 0, max: pr.numeric?.max ?? getDefaultNumericConfig(pr.kind)?.max ?? 10 } })}
+                      />
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -1018,7 +1262,8 @@ function curateRecentResults(matches: ScoreBusterMatch[] | undefined, limit: num
       <div className="flex justify-center">
         <Button onClick={create} disabled={saving || !leagueId || !label || !startsAt || !deadlineAt || !title} size="lg" className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:from-indigo-700 hover:to-violet-700 px-8">Utwórz wiktorynę</Button>
       </div>
-    </div>
+      </div>
+    </>
   )
 }
 
@@ -1028,17 +1273,85 @@ function kindLabel(k: string) {
     case 'history_numeric': return 'Wartość liczbowa'
     case 'future_1x2': return '1X2 (przyszłość)'
     case 'future_score': return 'Dokładny wynik'
+    case 'future_yellow_cards': return 'Żółte kartki (przyszłość)'
+    case 'future_corners': return 'Rzuty rożne (przyszłość)'
     default: return k
   }
 }
 
-function defaultPrompt(k: 'history_single'|'history_numeric'|'future_1x2'|'future_score') {
+function defaultPrompt(k: SlotKind) {
   switch (k) {
     case 'history_single': return 'Wybierz poprawną odpowiedź'
     case 'history_numeric': return 'Podaj wartość'
-    case 'future_1x2': return 'Kto wygra mecz?'
-    case 'future_score': return 'Jaki będzie dokładny wynik?'
+    case 'future_1x2': return FUTURE_1X2_PROMPT_VARIANTS[0].replace('{MATCH}', 'tym meczu').replace('{HOME}', 'gospodarze').replace('{AWAY}', 'goście')
+    case 'future_score': return FUTURE_SCORE_PROMPT_VARIANTS[0].replace('{MATCH}', 'tym meczu').replace('{HOME}', 'gospodarze').replace('{AWAY}', 'goście')
+    case 'future_yellow_cards': return FUTURE_STAT_PROMPT_VARIANTS.future_yellow_cards.replace('{MATCH}', 'tym meczu')
+    case 'future_corners': return FUTURE_STAT_PROMPT_VARIANTS.future_corners.replace('{MATCH}', 'tym meczu')
+    default: return 'Podaj wartość'
   }
+}
+
+const FUTURE_1X2_PROMPT_VARIANTS = [
+  'Kto wygra mecz {MATCH}?',
+  'Która drużyna zgarnie komplet punktów w starciu {MATCH}?',
+  'Czy {HOME} okaże się lepszy od {AWAY}?',
+]
+
+const FUTURE_SCORE_PROMPT_VARIANTS = [
+  'Jaki będzie dokładny wynik meczu {MATCH}?',
+  'Podaj końcowy rezultat pojedynku {MATCH}.',
+]
+
+const FUTURE_STAT_PROMPT_VARIANTS: Record<FutureStatKind, string> = {
+  future_yellow_cards: 'Ile żółtych kartek padnie w meczu {MATCH}?',
+  future_corners: 'Ile rzutów rożnych zobaczymy w meczu {MATCH}?',
+}
+
+function getFuturePrompt(kind: SlotKind, index: number, match?: ScoreBusterMatch | null): string {
+  switch (kind) {
+    case 'future_1x2': {
+      const tpl = FUTURE_1X2_PROMPT_VARIANTS[index % FUTURE_1X2_PROMPT_VARIANTS.length]
+      return formatFuturePrompt(tpl, match)
+    }
+    case 'future_score': {
+      const tpl = FUTURE_SCORE_PROMPT_VARIANTS[index % FUTURE_SCORE_PROMPT_VARIANTS.length]
+      return formatFuturePrompt(tpl, match)
+    }
+    case 'future_yellow_cards':
+    case 'future_corners': {
+      const tpl = FUTURE_STAT_PROMPT_VARIANTS[kind]
+      return formatFuturePrompt(tpl, match)
+    }
+    default:
+      return defaultPrompt(kind)
+  }
+}
+
+function formatFuturePrompt(template: string, match?: ScoreBusterMatch | null) {
+  const home = match?.homeTeam?.name?.trim().length ? match.homeTeam.name : 'gospodarze'
+  const away = match?.awayTeam?.name?.trim().length ? match.awayTeam.name : 'goście'
+  const label = match ? `${home} vs ${away}` : 'tym meczu'
+  return template.replace(/{MATCH}/g, label).replace(/{HOME}/g, home).replace(/{AWAY}/g, away)
+}
+
+function isFutureStatKind(kind: SlotKind | string | undefined): kind is FutureStatKind {
+  if (!kind) return false
+  return (FUTURE_STAT_KINDS as readonly string[]).includes(kind as any)
+}
+
+function shouldLockPrompt(kind: SlotKind) {
+  return isFutureStatKind(kind)
+}
+
+function getDefaultNumericConfig(kind: SlotKind) {
+  if (kind === 'history_numeric') {
+    return { min: 0, max: 6, step: 1 }
+  }
+  if (isFutureStatKind(kind)) {
+    const base = FUTURE_STAT_DEFAULTS[kind].numeric
+    return { ...base }
+  }
+  return undefined
 }
 
 function defaultSlot(): { kind: 'history_single'; prompt: string; options: string[]; bank_entry_id: string | null } {
@@ -1091,11 +1404,11 @@ function isUuid(value?: string | null): boolean {
 }
 
 function shouldAttachMatch(kind: SlotKind): boolean {
-  return kind === 'future_1x2' || kind === 'future_score' || kind === 'history_numeric'
+  return kind === 'history_numeric' || kind === 'future_1x2' || kind === 'future_score' || isFutureStatKind(kind)
 }
 
 function requiresExternalMatch(kind: SlotKind): boolean {
-  return kind === 'future_1x2' || kind === 'future_score'
+  return kind === 'future_1x2' || kind === 'future_score' || isFutureStatKind(kind)
 }
 
 function normalizeMatchId(raw: string | null | undefined, mapping: Record<string, string>): string | null {

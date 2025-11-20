@@ -249,16 +249,9 @@ export function Header({ initialAuth }: HeaderProps = {}) {
   return (
     <>
       <header
-        className="fixed top-0 left-0 right-0 z-50 border-b border-white/10 bg-background/80 backdrop-blur-xl shadow-[0_12px_45px_rgba(3,4,10,0.65)] overflow-hidden"
+        className="fixed top-0 left-0 right-0 z-40 border-b border-white/10 bg-transparent backdrop-blur-md"
         suppressHydrationWarning
       >
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 opacity-90"
-        >
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(187,155,255,0.35),_rgba(7,8,20,0.85)_60%)]" />
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,102,51,0.2),transparent_55%)]" />
-        </div>
         <div className="relative w-full px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16">
           <div className="mx-auto w-full max-w-screen-2xl flex h-16 items-center">
           <Logo />
@@ -369,51 +362,54 @@ export function Header({ initialAuth }: HeaderProps = {}) {
                 </DropdownMenu>
               )
             ) : (
-            <Dialog open={open} onOpenChange={setOpen}>
-              <DialogTrigger asChild>
-                <button className="flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-3.5 py-1.5 text-[12px] font-semibold text-foreground/80 shadow-[0_8px_20px_rgba(5,6,16,0.35)] transition-all hover:text-white hover:bg-white/10 focus:outline-none">
-                  <User className="h-5 w-5" />
-                  <span>Zaloguj się</span>
-                </button>
-              </DialogTrigger>
-              <DialogContent
-                className="left-0 top-0 h-[100dvh] w-screen translate-x-0 translate-y-0 rounded-none p-4 sm:p-6 overflow-y-auto sm:left-1/2 sm:top-1/2 sm:h-auto sm:w-full sm:max-w-md sm:translate-x-[-50%] sm:translate-y-[-50%] sm:rounded-lg"
-                onOpenAutoFocus={(e) => e.preventDefault()}
-              >
-                <DialogHeader>
-                  <DialogTitle className="text-2xl font-extrabold uppercase">
-                    {authView === 'login' ? 'Zaloguj się' : 'Dołącz do QuizTime'}
-                  </DialogTitle>
-                  {authView === 'register' ? (
-                    <DialogDescription>Utwórz konto, aby zacząć rywalizację.</DialogDescription>
-                  ) : (
-                    // Provide an accessible description to silence aria warning
-                    <DialogDescription className="sr-only">Authentication</DialogDescription>
-                  )}
-                </DialogHeader>
-                
-                {authView === 'login' ? (
-                  <LoginForm
-                    initialEmail={loginPrefill?.email}
-                    initialPassword={loginPrefill?.password}
-                    notice={loginPrefill?.notice}
-                    onSuccess={handleLoginSuccess}
-                    onSwitchToRegister={() => setAuthView('register')}
-                  />
-                ) : (
-                  <>
-                    <RegisterForm onSuccess={handleRegisterSuccess} />
-                    <Button
-                      variant="secondary"
-                      className="mt-2 bg-secondary/60 hover:bg-secondary/80"
-                      onClick={() => setAuthView('login')}
-                    >
-                      Masz już konto? Zaloguj się
-                    </Button>
-                  </>
-                )}
-              </DialogContent>
-            </Dialog>
+              <Dialog open={open} onOpenChange={setOpen}>
+                <DialogTrigger asChild>
+                  <button className="flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-3.5 py-1.5 text-[12px] font-semibold text-foreground/80 shadow-[0_8px_20px_rgba(5,6,16,0.35)] transition-all hover:text-white hover:bg-white/10 focus:outline-none">
+                    <User className="h-5 w-5" />
+                    <span>Zaloguj się</span>
+                  </button>
+                </DialogTrigger>
+                <DialogContent
+                  className="left-0 top-0 h-[100dvh] w-screen translate-x-0 translate-y-0 rounded-none px-4 py-6 sm:p-8 overflow-y-auto sm:left-1/2 sm:top-1/2 sm:h-auto sm:w-full sm:max-w-[520px] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-[28px]"
+                  onOpenAutoFocus={(e) => e.preventDefault()}
+                >
+                  <div className="hidden sm:block absolute inset-0 rounded-[28px] border border-white/12 bg-[rgba(9,11,25,0.95)] bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.08),transparent),radial-gradient(circle_at_80%_0%,rgba(255,161,255,0.08),transparent)] shadow-[0_45px_120px_rgba(4,6,18,0.65)] pointer-events-none" />
+                  <div className="relative z-10 space-y-4 sm:px-2 sm:py-0 w-full sm:max-w-[480px] sm:mx-auto">
+                    <DialogHeader>
+                      <DialogTitle className="text-2xl font-extrabold uppercase">
+                        {authView === 'login' ? 'Zaloguj się' : 'Dołącz do QuizTime'}
+                      </DialogTitle>
+                      {authView === 'register' ? (
+                        <DialogDescription>Utwórz konto, aby zacząć rywalizację.</DialogDescription>
+                      ) : (
+                        // Provide an accessible description to silence aria warning
+                        <DialogDescription className="sr-only">Authentication</DialogDescription>
+                      )}
+                    </DialogHeader>
+                    
+                    {authView === 'login' ? (
+                      <LoginForm
+                        initialEmail={loginPrefill?.email}
+                        initialPassword={loginPrefill?.password}
+                        notice={loginPrefill?.notice}
+                        onSuccess={handleLoginSuccess}
+                        onSwitchToRegister={() => setAuthView('register')}
+                      />
+                    ) : (
+                      <>
+                        <RegisterForm onSuccess={handleRegisterSuccess} />
+                        <Button
+                          variant="secondary"
+                          className="mt-2 h-10 w-full rounded-full bg-white/10 text-white text-center hover:bg-white/20"
+                          onClick={() => setAuthView('login')}
+                        >
+                          Masz już konto? Zaloguj się
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </DialogContent>
+              </Dialog>
             )}
           </nav>
           </div>

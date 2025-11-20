@@ -280,10 +280,10 @@ export function LoginForm({ onSuccess, onSwitchToRegister, initialEmail, initial
                   autoComplete="email"
                   {...field}
                   error={!!fieldState.error}
-                  label={<span>Email{fieldState.error ? <span className="ml-2 text-destructive text-xs font-semibold">– {fieldState.error.message || 'wymagany'}</span> : null}</span>}
+                  label={renderLabel('Email', fieldState.error?.message, true)}
                 />
               </FormControl>
-              {/* сообщение у метки, снизу не показываем */}
+              <FormMessage className="sr-only" />
             </FormItem>
           )}
         />
@@ -298,7 +298,7 @@ export function LoginForm({ onSuccess, onSwitchToRegister, initialEmail, initial
                   autoComplete="current-password"
                   {...field}
                   error={!!fieldState.error}
-                  label={<span>Hasło{fieldState.error ? <span className="ml-2 text-destructive text-xs font-semibold">– {fieldState.error.message || 'wymagane'}</span> : null}</span>}
+                  label={renderLabel('Hasło', fieldState.error?.message, true)}
                   rightAdornment={
                     <Button
                       type="button"
@@ -313,7 +313,7 @@ export function LoginForm({ onSuccess, onSwitchToRegister, initialEmail, initial
                   }
                 />
               </FormControl>
-              {/* сообщение у метки, снизу не показываем */}
+              <FormMessage className="sr-only" />
             </FormItem>
           )}
         />
@@ -425,3 +425,9 @@ export function LoginForm({ onSuccess, onSwitchToRegister, initialEmail, initial
     </Form>
   );
 }
+  const renderLabel = (text: string, error?: string) => (
+    <span className="flex items-baseline gap-2 text-muted-foreground">
+      <span>{text}</span>
+      {error && <span className="text-xs font-semibold text-destructive">{error}</span>}
+    </span>
+  )

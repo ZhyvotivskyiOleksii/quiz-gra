@@ -1,10 +1,23 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { fetchLeagueResults, mapLeagueToApiId, type ScoreBusterMatch } from '@/lib/footballApi'
+import {
+  fetchLeagueResults,
+  mapLeagueToApiId,
+  type ScoreBusterMatch,
+  fetchMatchStats,
+  type ScoreBusterMatchStatMap,
+  fetchMatchDetails,
+} from '@/lib/footballApi'
 import { eventTimestamp, normalizeTeamName } from '@/lib/matchUtils'
 
-export const FUTURE_KINDS = ['future_1x2', 'future_score'] as const
+export const FUTURE_KINDS = ['future_1x2', 'future_score', 'future_yellow_cards', 'future_corners'] as const
 
 type FutureKind = (typeof FUTURE_KINDS)[number]
+type FutureStatKind = 'future_yellow_cards' | 'future_corners'
+
+const FUTURE_STAT_KEYS: Record<FutureStatKind, string> = {
+  future_yellow_cards: 'yellow_cards',
+  future_corners: 'corner',
+}
 
 type PendingQuestion = {
   id: string
@@ -18,6 +31,7 @@ type MatchRow = {
   home_team: string | null
   away_team: string | null
   kickoff_at: string | null
+  external_match_id: string | null
 }
 
 type RoundRow = {
@@ -30,6 +44,8 @@ type LeagueRow = {
   name: string | null
   code: string | null
 }
+
+const statsCache = new Map<string, ScoreBusterMatchStatMap | null>()
 
 export async function settleFutureQuestions(client?: SupabaseClient) {
   const supabase = client ?? createServiceClient()
@@ -47,7 +63,7 @@ export async function settleFutureQuestions(client?: SupabaseClient) {
   const matchIds = Array.from(new Set(questions.map((q) => q.match_id)))
   const { data: matchRows, error: matchErr } = await supabase
     .from('matches')
-    .select('id,round_id,home_team,away_team,kickoff_at')
+    .select('id,round_id,home_team,away_team,kickoff_at,external_match_id')
     .in('id', matchIds)
   if (matchErr) throw matchErr
   const matches = (matchRows || []) as MatchRow[]
@@ -100,22 +116,73 @@ export async function settleFutureQuestions(client?: SupabaseClient) {
   const pendingMatches = matches
     .map((match) => {
       const round = roundMap.get(match.round_id)
-      if (!round?.league_id) return null
-      const league = leagueMap.get(round.league_id)
-      if (!league) return null
-      const apiId = mapLeagueToApiId(league.name, league.code)
-      if (!apiId) return null
-      return { match, apiId }
+      const league = round?.league_id ? leagueMap.get(round.league_id) : null
+      const apiId = league ? mapLeagueToApiId(league.name, league.code) : null
+      if (!match.external_match_id && !apiId) return null
+      return { match, apiId: apiId ?? null }
     })
-    .filter((x): x is { match: MatchRow; apiId: string } => Boolean(x))
+    .filter((x): x is { match: MatchRow; apiId: string | null } => Boolean(x))
 
-  for (const { match, apiId } of pendingMatches) {
+  const directMatches: MatchRow[] = []
+  const fallbackMatches: { match: MatchRow; apiId: string }[] = []
+
+  for (const entry of pendingMatches) {
+    const match = entry.match
     const kickoff = match.kickoff_at ? new Date(match.kickoff_at).getTime() : null
     if (kickoff && kickoff > now) {
       skipped.push(`match_${match.id}_future`)
       continue
     }
+    if (match.external_match_id) {
+      directMatches.push(match)
+    } else if (entry.apiId) {
+      fallbackMatches.push({ match, apiId: entry.apiId })
+    } else {
+      skipped.push(`match_${match.id}_no_source`)
+    }
+  }
 
+  for (const match of directMatches) {
+    const externalId = match.external_match_id!
+    let details = null
+    try {
+      details = await fetchMatchDetails(externalId)
+    } catch (err) {
+      console.error('match details fetch failed', externalId, err)
+      skipped.push(`match_${match.id}_details_error`)
+      continue
+    }
+    if (!details) {
+      skipped.push(`match_${match.id}_details_missing`)
+      continue
+    }
+    if (details.statusCategory !== 'finished') {
+      skipped.push(`match_${match.id}_status_${details.statusId || 'pending'}`)
+      continue
+    }
+    const homeScore = details.score.home
+    const awayScore = details.score.away
+    if (homeScore === null || awayScore === null) {
+      skipped.push(`match_${match.id}_details_score_pending`)
+      continue
+    }
+    const relatedQuestions = questionsByMatch.get(match.id) || []
+    const result = await applySettlement({
+      supabase,
+      match,
+      relatedQuestions,
+      eventId: externalId,
+      homeScore,
+      awayScore,
+      skipped,
+    })
+    if (result.success) {
+      settledMatches += 1
+      settledQuestions += result.settledCount
+    }
+  }
+
+  for (const { match, apiId } of fallbackMatches) {
     if (!leagueBuckets.has(apiId)) {
       try {
         const events = await fetchLeagueResults(apiId)
@@ -125,14 +192,13 @@ export async function settleFutureQuestions(client?: SupabaseClient) {
         leagueBuckets.set(apiId, { apiId, events: [] })
       }
     }
-
     const bucket = leagueBuckets.get(apiId)!
     const found = findMatchingEvent(bucket.events, match)
     if (!found) {
       skipped.push(`match_${match.id}_no_event`)
       continue
     }
-
+    const kickoff = match.kickoff_at ? new Date(match.kickoff_at).getTime() : null
     const eventTs = eventTimestamp(found)
     if (kickoff && eventTs) {
       const delta = Math.abs(eventTs.getTime() - kickoff)
@@ -141,39 +207,26 @@ export async function settleFutureQuestions(client?: SupabaseClient) {
         continue
       }
     }
-
     const homeScore = parseScore(found.homeTeam.score)
     const awayScore = parseScore(found.awayTeam.score)
     if (homeScore === null || awayScore === null) {
       skipped.push(`match_${match.id}_score_pending`)
       continue
     }
-
-    const matchUpdate = await supabase
-      .from('matches')
-      .update({ result_home: homeScore, result_away: awayScore, status: 'finished' })
-      .eq('id', match.id)
-    if (matchUpdate.error) {
-      skipped.push(`match_${match.id}_update_failed`)
-      continue
-    }
-
     const relatedQuestions = questionsByMatch.get(match.id) || []
-    for (const q of relatedQuestions) {
-      const correctValue =
-        q.kind === 'future_score'
-          ? { home: homeScore, away: awayScore }
-          : determineOutcomeSymbol(homeScore, awayScore)
-      const { error: qErr } = await supabase.from('quiz_questions').update({ correct: correctValue }).eq('id', q.id)
-      if (qErr) {
-        skipped.push(`question_${q.id}_update_failed`)
-        continue
-      }
-      settledQuestions += 1
+    const result = await applySettlement({
+      supabase,
+      match,
+      relatedQuestions,
+      eventId: found.id,
+      homeScore,
+      awayScore,
+      skipped,
+    })
+    if (result.success) {
+      settledMatches += 1
+      settledQuestions += result.settledCount
     }
-
-    settledMatches += 1
-    await lockRoundIfSettled(supabase, match.round_id)
   }
 
   return { settledMatches, settledQuestions, skipped }
@@ -220,6 +273,92 @@ function determineOutcomeSymbol(home: number, away: number) {
   if (home > away) return '1'
   if (home < away) return '2'
   return 'X'
+}
+
+function isFutureStatKind(kind: FutureKind): kind is FutureStatKind {
+  return kind === 'future_yellow_cards' || kind === 'future_corners'
+}
+
+function extractStatTotal(stats: ScoreBusterMatchStatMap | null, key: string) {
+  if (!stats) return null
+  const stat = stats[key]
+  if (!stat) return null
+  const total = (stat.home ?? 0) + (stat.away ?? 0)
+  return Number.isFinite(total) ? total : null
+}
+
+type ApplySettlementArgs = {
+  supabase: SupabaseClient
+  match: MatchRow
+  relatedQuestions: PendingQuestion[]
+  eventId?: string | null
+  homeScore: number
+  awayScore: number
+  skipped: string[]
+}
+
+async function applySettlement({
+  supabase,
+  match,
+  relatedQuestions,
+  eventId,
+  homeScore,
+  awayScore,
+  skipped,
+}: ApplySettlementArgs): Promise<{ success: boolean; settledCount: number }> {
+  const { error } = await supabase
+    .from('matches')
+    .update({ result_home: homeScore, result_away: awayScore, status: 'finished' })
+    .eq('id', match.id)
+  if (error) {
+    skipped.push(`match_${match.id}_update_failed`)
+    return { success: false, settledCount: 0 }
+  }
+
+  const needsStats = relatedQuestions.some((q) => isFutureStatKind(q.kind))
+  const statEventId = needsStats ? eventId ?? null : null
+  const statTotals = statEventId ? await getStatsForEvent(statEventId) : null
+
+  let settledCount = 0
+  for (const q of relatedQuestions) {
+    let correctValue: any = null
+    if (q.kind === 'future_score') {
+      correctValue = { home: homeScore, away: awayScore }
+    } else if (isFutureStatKind(q.kind)) {
+      const statKey = FUTURE_STAT_KEYS[q.kind]
+      const statValue = statTotals ? extractStatTotal(statTotals, statKey) : null
+      if (statValue === null) {
+        skipped.push(`question_${q.id}_stat_missing_${statKey}`)
+        continue
+      }
+      correctValue = statValue
+    } else {
+      correctValue = determineOutcomeSymbol(homeScore, awayScore)
+    }
+    const { error: qErr } = await supabase.from('quiz_questions').update({ correct: correctValue }).eq('id', q.id)
+    if (qErr) {
+      skipped.push(`question_${q.id}_update_failed`)
+      continue
+    }
+    settledCount += 1
+  }
+
+  await lockRoundIfSettled(supabase, match.round_id)
+  return { success: true, settledCount }
+}
+
+async function getStatsForEvent(eventId: string): Promise<ScoreBusterMatchStatMap | null> {
+  if (!eventId) return null
+  if (!statsCache.has(eventId)) {
+    try {
+      const stats = await fetchMatchStats(eventId)
+      statsCache.set(eventId, stats)
+    } catch (err) {
+      console.error('match stats fetch failed', eventId, err)
+      statsCache.set(eventId, null)
+    }
+  }
+  return statsCache.get(eventId) ?? null
 }
 
 async function lockRoundIfSettled(supabase: SupabaseClient, roundId: string) {

@@ -1,4 +1,4 @@
-export type HistoryQuestionTemplate = 'winner_1x2' | 'total_goals'
+export type HistoryQuestionTemplate = 'winner_1x2' | 'total_goals' | 'total_yellow_cards' | 'total_corners'
 
 export type HistoryBankEntry = {
   id: string
@@ -12,6 +12,7 @@ export type HistoryBankEntry = {
   status: string
   league_code?: string | null
   source_kind?: string | null
+  payload?: Record<string, any> | null
 }
 
 export type GeneratedHistoryQuestion = {
@@ -19,12 +20,32 @@ export type GeneratedHistoryQuestion = {
   prompt: string
   options: any
   correct: any
+  meta?: {
+    scoreLabel?: string | null
+  }
 }
 
 const REMIS_LABEL = 'Remis'
 
 function formatMatchLabel(entry: HistoryBankEntry) {
   return `${entry.home_team} – ${entry.away_team}`
+}
+
+function formatScoreLabel(entry: HistoryBankEntry): string | null {
+  if (typeof entry.home_score !== 'number' || typeof entry.away_score !== 'number') return null
+  return `${entry.home_team} ${entry.home_score} - ${entry.away_score} ${entry.away_team}`
+}
+
+function withMeta(question: GeneratedHistoryQuestion, entry: HistoryBankEntry): GeneratedHistoryQuestion {
+  const scoreLabel = formatScoreLabel(entry)
+  if (!scoreLabel) return question
+  return {
+    ...question,
+    meta: {
+      ...(question.meta || {}),
+      scoreLabel,
+    },
+  }
 }
 
 function winnerQuestion(entry: HistoryBankEntry): GeneratedHistoryQuestion {
@@ -34,23 +55,54 @@ function winnerQuestion(entry: HistoryBankEntry): GeneratedHistoryQuestion {
   if (totalHome > totalAway) correct = entry.home_team
   if (totalAway > totalHome) correct = entry.away_team
 
-  return {
+  return withMeta({
     kind: 'history_single',
     prompt: `Kto wygrał mecz ${formatMatchLabel(entry)}?`,
     options: [entry.home_team, REMIS_LABEL, entry.away_team],
     correct,
-  }
+  }, entry)
 }
 
 function totalGoalsQuestion(entry: HistoryBankEntry): GeneratedHistoryQuestion {
   const total = Number(entry.home_score ?? 0) + Number(entry.away_score ?? 0)
   const max = Math.max(6, total + 2)
-  return {
+  return withMeta({
     kind: 'history_numeric',
     prompt: `Ile łącznie goli padło w meczu ${formatMatchLabel(entry)}?`,
     options: { min: 0, max, step: 1 },
     correct: total,
-  }
+  }, entry)
+}
+
+function totalYellowCardsQuestion(entry: HistoryBankEntry): GeneratedHistoryQuestion | null {
+  const total = getStatTotal(entry, 'yellow_cards_total')
+  if (total === null) return null
+  const max = Math.max(8, total + 3)
+  return withMeta({
+    kind: 'history_numeric',
+    prompt: `Ile żółtych kartek pokazano w meczu ${formatMatchLabel(entry)}?`,
+    options: { min: 0, max, step: 1 },
+    correct: total,
+  }, entry)
+}
+
+function totalCornersQuestion(entry: HistoryBankEntry): GeneratedHistoryQuestion | null {
+  const total = getStatTotal(entry, 'corner_total')
+  if (total === null) return null
+  const max = Math.max(12, total + 4)
+  return withMeta({
+    kind: 'history_numeric',
+    prompt: `Ile rzutów rożnych wykonano w meczu ${formatMatchLabel(entry)}?`,
+    options: { min: 0, max, step: 1 },
+    correct: total,
+  }, entry)
+}
+
+function getStatTotal(entry: HistoryBankEntry, key: string): number | null {
+  const stats = (entry.payload as any)?.stats
+  if (!stats || typeof stats[key] === 'undefined' || stats[key] === null) return null
+  const value = Number(stats[key])
+  return Number.isFinite(value) ? value : null
 }
 
 export function buildHistoryQuestionFromEntry(
@@ -61,6 +113,10 @@ export function buildHistoryQuestionFromEntry(
       return winnerQuestion(entry)
     case 'total_goals':
       return totalGoalsQuestion(entry)
+    case 'total_yellow_cards':
+      return totalYellowCardsQuestion(entry)
+    case 'total_corners':
+      return totalCornersQuestion(entry)
     default:
       return null
   }

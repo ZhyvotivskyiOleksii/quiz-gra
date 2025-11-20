@@ -22,6 +22,38 @@ type RawMatchesResponse = {
   rounds?: RawRound[] | null
 }
 
+type RawStatValue = {
+  home?: string | number | null
+  away?: string | number | null
+}
+
+type RawStatEntry = {
+  name?: string | null
+  value?: RawStatValue | null
+  typeId?: string | number | null
+}
+
+type RawStatGroup = {
+  name?: string | null
+  statistics?: RawStatEntry[] | null
+}
+
+type RawMatchStatsResponse = {
+  stats?: RawStatGroup[] | null
+}
+
+type RawMatchDetailsResponse = {
+  id?: string | number | null
+  status?: {
+    name?: string | null
+    statusId?: string | number | null
+  } | null
+  score?: {
+    home?: string | number | null
+    away?: string | number | null
+  } | null
+}
+
 export type ScoreBusterTeam = {
   id: string
   name: string
@@ -156,6 +188,197 @@ export async function fetchLeagueStandings(
     { sportId },
   )
   return (payload?.ranking || []) as ScoreBusterStanding[]
+}
+
+export type ScoreBusterMatchStatMap = Record<string, { home: number; away: number }>
+
+export async function fetchMatchStats(eventId: string): Promise<ScoreBusterMatchStatMap | null> {
+  if (!eventId) return null
+  const payload = await fetchJson<RawMatchStatsResponse>(`/api/score/events/${eventId}/stats`)
+  const groups = payload?.stats || []
+  const overall = groups.find((group) => group?.name?.toLowerCase() === 'overall')
+  const stats: ScoreBusterMatchStatMap = {}
+  if (!overall?.statistics?.length) return null
+  for (const stat of overall.statistics || []) {
+    const statName = stat?.name
+    if (!statName) continue
+    const home = toScore(stat?.value?.home)
+    const away = toScore(stat?.value?.away)
+    if (home === null || away === null) continue
+    stats[statName] = { home, away }
+  }
+  return Object.keys(stats).length ? stats : null
+}
+
+export type ScoreBusterStatusCategory =
+  | 'not_started'
+  | 'in_progress'
+  | 'finished'
+  | 'interrupted'
+  | 'unknown'
+  | 'cancelled'
+  | 'deleted'
+
+const SCORE_STATUS_MAP: Record<string, ScoreBusterStatusCategory> = {
+  '1': 'not_started',
+  '2': 'in_progress',
+  '3': 'in_progress',
+  '4': 'in_progress',
+  '5': 'not_started',
+  '6': 'finished',
+  '7': 'in_progress',
+  '8': 'in_progress',
+  '9': 'in_progress',
+  '10': 'in_progress',
+  '11': 'finished',
+  '12': 'interrupted',
+  '13': 'finished',
+  '14': 'in_progress',
+  '15': 'in_progress',
+  '16': 'finished',
+  '17': 'interrupted',
+  '18': 'unknown',
+  '19': 'in_progress',
+  '20': 'in_progress',
+  '21': 'in_progress',
+  '22': 'in_progress',
+  '23': 'in_progress',
+  '24': 'finished',
+  '25': 'not_started',
+  '26': 'in_progress',
+  '30': 'in_progress',
+  '31': 'in_progress',
+  '36': 'in_progress',
+  '37': 'in_progress',
+  '38': 'in_progress',
+  '41': 'in_progress',
+  '45': 'in_progress',
+  '49': 'unknown',
+  '52': 'in_progress',
+  '54': 'finished',
+  '57': 'unknown',
+  '58': 'unknown',
+  '59': 'finished',
+  '80': 'in_progress',
+  '81': 'in_progress',
+  '82': 'in_progress',
+  '83': 'in_progress',
+  '93': 'interrupted',
+  '95': 'in_progress',
+  '96': 'in_progress',
+  '97': 'in_progress',
+  '98': 'in_progress',
+  '99': 'in_progress',
+  '100': 'in_progress',
+  '101': 'in_progress',
+  '102': 'in_progress',
+  '103': 'in_progress',
+  '104': 'in_progress',
+  '105': 'in_progress',
+  '106': 'cancelled',
+  '107': 'unknown',
+  '113': 'finished',
+  '139': 'in_progress',
+  '158': 'deleted',
+  '160': 'in_progress',
+  '161': 'in_progress',
+  '162': 'in_progress',
+  '163': 'in_progress',
+  '164': 'in_progress',
+  '165': 'in_progress',
+  '166': 'in_progress',
+  '167': 'in_progress',
+  '168': 'in_progress',
+  '169': 'in_progress',
+  '170': 'in_progress',
+  '171': 'in_progress',
+  '172': 'in_progress',
+  '173': 'in_progress',
+  '174': 'in_progress',
+  '175': 'in_progress',
+  '176': 'in_progress',
+  '177': 'in_progress',
+  '178': 'in_progress',
+  '179': 'in_progress',
+  '180': 'in_progress',
+  '181': 'in_progress',
+  '182': 'in_progress',
+  '183': 'in_progress',
+  '184': 'in_progress',
+  '185': 'in_progress',
+  '186': 'in_progress',
+  '187': 'in_progress',
+  '188': 'in_progress',
+  '189': 'unknown',
+  '190': 'finished',
+  '192': 'in_progress',
+  '193': 'in_progress',
+  '194': 'in_progress',
+  '195': 'in_progress',
+  '196': 'in_progress',
+  '197': 'in_progress',
+  '198': 'in_progress',
+  '199': 'in_progress',
+  '200': 'in_progress',
+  '204': 'in_progress',
+  '205': 'in_progress',
+  '206': 'not_started',
+  '207': 'in_progress',
+  '208': 'in_progress',
+  '209': 'in_progress',
+  '210': 'in_progress',
+  '211': 'in_progress',
+  '212': 'interrupted',
+  '213': 'interrupted',
+  '214': 'interrupted',
+  '215': 'interrupted',
+  '216': 'interrupted',
+  '217': 'interrupted',
+  '218': 'in_progress',
+}
+
+export function mapScoreStatus(statusId?: string | number | null): ScoreBusterStatusCategory {
+  if (typeof statusId === 'number') {
+    return SCORE_STATUS_MAP[String(statusId)] ?? 'unknown'
+  }
+  if (typeof statusId === 'string' && statusId.trim()) {
+    return SCORE_STATUS_MAP[statusId.trim()] ?? 'unknown'
+  }
+  return 'unknown'
+}
+
+export type ScoreBusterMatchDetails = {
+  id: string
+  statusId: string | null
+  statusName: string | null
+  statusCategory: ScoreBusterStatusCategory
+  score: {
+    home: number | null
+    away: number | null
+  }
+}
+
+export async function fetchMatchDetails(matchId: string): Promise<ScoreBusterMatchDetails | null> {
+  if (!matchId) return null
+  const payload = await fetchJson<RawMatchDetailsResponse>(`/api/score/matches/${matchId}/details`)
+  const id = typeof payload?.id === 'number' || typeof payload?.id === 'string' ? String(payload.id) : String(matchId)
+  const home = toScore(payload?.score?.home)
+  const away = toScore(payload?.score?.away)
+  const statusId =
+    typeof payload?.status?.statusId === 'number' || typeof payload?.status?.statusId === 'string'
+      ? String(payload.status.statusId)
+      : null
+  const statusName = payload?.status?.name ?? null
+  return {
+    id,
+    statusId,
+    statusName,
+    statusCategory: mapScoreStatus(statusId),
+    score: {
+      home: home ?? null,
+      away: away ?? null,
+    },
+  }
 }
 
 const LEAGUE_ID_MAP: Record<string, string> = {

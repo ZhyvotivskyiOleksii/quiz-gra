@@ -1,10 +1,19 @@
 "use client";
 import * as React from 'react'
+import Image from 'next/image'
 import { useParams, useRouter } from 'next/navigation'
 import { getSupabase } from '@/lib/supabaseClient'
 import { Button } from '@/components/ui/button'
+import { PitchLoader } from '@/components/ui/pitch-loader'
 import { cn } from '@/lib/utils'
 import { getTeamLogoUrl } from '@/lib/footballApi'
+
+const FUTURE_NUMERIC_KINDS = new Set(['future_yellow_cards', 'future_corners'])
+const FUTURE_STAT_PROMPTS: Record<string, string> = {
+  future_yellow_cards: 'Ile żółtych kartek padnie w meczu?',
+  future_corners: 'Ile rzutów rożnych zobaczymy w meczu?',
+}
+const LEGACY_1X2_PROMPTS = new Set(['kto wygra mecz?', 'kto wygra mecz'])
 
 type Q = {
   id: string
@@ -41,6 +50,38 @@ export default function QuizPlayPage() {
   const awayBadge = match?.away_team_external_id ? getTeamLogoUrl(match.away_team_external_id) : null
   const homeInitials = getInitials(homeName)
   const awayInitials = getInitials(awayName)
+  const matchKickoffDate = React.useMemo(
+    () => (match?.kickoff_at ? new Date(match.kickoff_at) : null),
+    [match?.kickoff_at],
+  )
+  const matchHasStarted = matchKickoffDate ? matchKickoffDate.getTime() <= Date.now() : false
+  const matchesArray = React.useMemo(() => Object.values(matchMap || {}), [matchMap])
+  const earliestMatchKickoffTs = React.useMemo(() => {
+    const ts = (matchesArray as any[])
+      .map(m => (m?.kickoff_at ? new Date(m.kickoff_at).getTime() : null))
+      .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+    if (!ts.length) return null
+    return Math.min(...ts)
+  }, [matchesArray])
+  const roundDeadlineTs = React.useMemo(
+    () => (deadline ? new Date(deadline).getTime() : null),
+    [deadline],
+  )
+  const quizLockTs = React.useMemo(() => {
+    const values = [roundDeadlineTs, earliestMatchKickoffTs].filter(
+      (value): value is number => typeof value === 'number' && Number.isFinite(value),
+    )
+    if (!values.length) return null
+    return Math.min(...values)
+  }, [roundDeadlineTs, earliestMatchKickoffTs])
+  const quizLocked = quizLockTs !== null && quizLockTs <= Date.now()
+  const quizLockLabel = quizLockTs ? new Date(quizLockTs).toLocaleString('pl-PL') : null
+  const bettingInfo = React.useMemo(() => {
+    if (!quizLockTs) return null
+    return quizLockTs <= Date.now()
+      ? `Typowanie zamknięte ${quizLockLabel ?? ''}`.trim()
+      : `Koniec obstawiania: ${quizLockLabel}`
+  }, [quizLockTs, quizLockLabel])
   const isAnswered = q ? isQuestionAnswered(q.kind, value) : false
 
   React.useEffect(() => {
@@ -49,19 +90,38 @@ export default function QuizPlayPage() {
     ;(async () => {
       try {
         const s = getSupabase()
+        const matchSelect =
+          'id,home_team,away_team,kickoff_at,home_team_external_id,away_team_external_id,round_label'
 
-        const {
-          data: { user },
-        } = await s.auth.getUser()
-
-        const { data: qz, error: quizErr } = await s
+        const quizPromise = s
           .from('quizzes')
           .select('title,round_id')
           .eq('id', id)
           .maybeSingle()
+
+        const questionsPromise = s
+          .from('quiz_questions')
+          .select('id,kind,prompt,options,order_index,match_id')
+          .eq('quiz_id', id)
+          .order('order_index', { ascending: true })
+
+        const userPromise = s.auth.getUser()
+
+        const [
+          {
+            data: { user },
+          },
+          { data: qz, error: quizErr },
+          { data: qs, error: qErr },
+        ] = await Promise.all([userPromise, quizPromise, questionsPromise])
+
         if (quizErr) throw quizErr
+        if (qErr) throw qErr
 
         if (qz?.title) setTitle(qz.title)
+        setQuestions(qs || [])
+
+        const nextMatchMap: Record<string, any> = {}
 
         if (qz?.round_id) {
           const { data: r, error: roundErr } = await s
@@ -75,28 +135,29 @@ export default function QuizPlayPage() {
           setRoundLabel((r as any)?.label ?? null)
 
           if (r?.id) {
-            const { data: ms, error: matchErr } = await s
-              .from('matches')
-              .select('id,home_team,away_team,kickoff_at,home_team_external_id,away_team_external_id,round_label')
-              .eq('round_id', r.id)
+            const { data: ms, error: matchErr } = await s.from('matches').select(matchSelect).eq('round_id', r.id)
             if (matchErr) throw matchErr
 
-            const map: Record<string, any> = {}
             ;(ms || []).forEach((m: any) => {
-              map[m.id] = m
+              if (m?.id) nextMatchMap[m.id] = m
             })
-            setMatchMap(map)
           }
         }
 
-        const { data: qs, error: qErr } = await s
-          .from('quiz_questions')
-          .select('id,kind,prompt,options,order_index,match_id')
-          .eq('quiz_id', id)
-          .order('order_index', { ascending: true })
-        if (qErr) throw qErr
+        const questionMatchIds = Array.from(
+          new Set((qs || []).map(q => q.match_id).filter((mid): mid is string => Boolean(mid))),
+        )
+        const missingMatchIds = questionMatchIds.filter(mid => !nextMatchMap[mid])
 
-        setQuestions(qs || [])
+        if (missingMatchIds.length) {
+          const { data: ms, error: matchErr } = await s.from('matches').select(matchSelect).in('id', missingMatchIds)
+          if (matchErr) throw matchErr
+          ;(ms || []).forEach((m: any) => {
+            if (m?.id) nextMatchMap[m.id] = m
+          })
+        }
+
+        setMatchMap(nextMatchMap)
 
         if (user) {
           const { data: submission } = await s
@@ -112,7 +173,7 @@ export default function QuizPlayPage() {
               .eq('submission_id', submission.id)
             if (storedAnswers?.length) {
               const initial: Record<string, any> = {}
-              storedAnswers.forEach(a => {
+              storedAnswers.forEach((a) => {
                 if (a.question_id) initial[a.question_id] = a.answer
               })
               setAnswers(initial)
@@ -130,11 +191,17 @@ export default function QuizPlayPage() {
 
 
   function choose(questionId: string, value: any) {
+    if (quizLocked) return
     setAnswers(prev => ({ ...prev, [questionId]: value }))
   }
 
   async function submit() {
-    if (submitting) return
+    if (submitting || quizLocked) {
+      if (quizLocked) {
+        alert('Typowanie zostało już zamknięte. Nie możesz edytować odpowiedzi po rozpoczęciu meczu.')
+      }
+      return
+    }
     setSubmitting(true)
     const s = getSupabase()
     try {
@@ -184,7 +251,8 @@ export default function QuizPlayPage() {
         await s.from('quiz_answers').insert(payload as any)
       }
 
-      router.replace('/app/history')
+      router.replace('/app/results')
+      router.refresh()
     } catch (e) {
       console.error(e)
       alert('Nie udało się wysłać odpowiedzi. Spróbuj ponownie.')
@@ -194,26 +262,47 @@ export default function QuizPlayPage() {
   }
 
   return (
-    <div className="relative min-h-[calc(100vh-64px)] w-full overflow-hidden bg-background">
-      <div aria-hidden className="pointer-events-none absolute inset-0">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,_rgba(187,155,255,0.18),_transparent_55%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_0%,_rgba(255,102,51,0.18),_transparent_50%)]" />
-      </div>
+    <div className="relative min-h-[calc(100vh-64px)] w-full overflow-hidden app-surface-bg">
+      {submitting && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="rounded-[28px] border border-white/10 bg-[rgba(14,16,30,0.9)] px-10 py-8 text-center text-white shadow-[0_22px_55px_rgba(0,0,0,0.65)]">
+            <PitchLoader />
+            <p className="mt-4 text-xs uppercase tracking-[0.4em] text-white/70">
+              Przesyłamy odpowiedzi…
+            </p>
+          </div>
+        </div>
+      )}
       <div className="relative z-10 mx-auto flex min-h-[calc(100vh-64px)] items-start justify-center px-4 pt-6 pb-6 text-white sm:px-6 sm:pt-10 md:px-8">
         <div className="w-full max-w-[900px]">
-          <div className="mx-auto mb-5 w-full max-w-[640px] rounded-[26px] border border-white/10 bg-[rgba(16,18,34,0.9)] px-4 py-4 shadow-[0_25px_60px_rgba(5,5,10,0.65)] sm:mb-6 sm:px-8 sm:py-5">
-            <div className="text-center">
-              <div className="font-headline tracking-wider text-lg uppercase">{title || 'Wiktoryna'}</div>
-              {roundLabel && <div className="mt-1 text-sm uppercase tracking-wide text-white/80">{roundLabel}</div>}
-              {deadline && (
-                <div className="mt-1 text-sm opacity-80">Do: {new Date(deadline).toLocaleString('pl-PL')}</div>
-              )}
+          <div className="animate-gradient-border mx-auto mb-5 w-full max-w-[640px] sm:mb-6">
+            <div className="gradient-border-inner relative overflow-hidden px-4 py-4 shadow-[0_25px_60px_rgba(5,5,10,0.45)] sm:px-8 sm:py-5">
+              <Image
+                src="/icon/soc.webp"
+                alt=""
+                width={360}
+                height={260}
+                priority
+                aria-hidden="true"
+                className="pointer-events-none select-none absolute top-1/2 right-[-8px] w-[92px] -translate-y-1/2 opacity-80 drop-shadow-[0_10px_24px_rgba(0,0,0,0.45)] sm:right-[-4px] sm:w-[125px]"
+              />
+              <div className="text-center">
+                <div className="font-headline tracking-wider text-lg uppercase">{title || 'Wiktoryna'}</div>
+                {roundLabel && <div className="mt-1 text-sm uppercase tracking-wide text-white/80">{roundLabel}</div>}
+                {bettingInfo && <div className="mt-1 text-sm opacity-80">{bettingInfo}</div>}
+              </div>
             </div>
           </div>
 
+          {quizLocked && (
+            <div className="mx-auto mb-6 max-w-[640px] rounded-2xl border border-white/10 bg-red-500/10 px-6 py-5 text-center text-sm text-red-200">
+              Typowanie zamknięte. Mecz wystartował {quizLockLabel}.
+            </div>
+          )}
+
           {loading && (
-            <div className="mx-auto flex max-w-[640px] flex-col items-center gap-3 rounded-[22px] border border-white/5 bg-white/5 px-6 py-10 text-center text-white/80">
-              <div className="h-12 w-12 animate-spin rounded-full border-4 border-white/10 border-t-white/60" />
+            <div className="mx-auto flex max-w-[640px] flex-col items-center gap-4 rounded-[22px] border border-white/5 bg-white/5 px-6 py-10 text-center text-white/80">
+              <PitchLoader />
               <p className="text-sm uppercase tracking-[0.4em]">Ładujemy pytania…</p>
             </div>
           )}
@@ -248,13 +337,13 @@ export default function QuizPlayPage() {
                       return <div key={idx} className={`${base} ${tone}`} />
                     })}
                   </div>
-                  <div className="text-center text-sm opacity-90 sm:text-base">
+              <div className="text-center text-sm opacity-90 sm:text-base">
                     Pytanie {currentStep + 1} z {total}
                   </div>
                 </div>
               )}
 
-              {(q.kind === 'future_1x2' || q.kind === 'future_score') && match && (
+              {(q.kind === 'future_1x2' || q.kind === 'future_score' || FUTURE_NUMERIC_KINDS.has(q.kind)) && match && (
                 <div className="mx-auto mb-5 flex max-w-[720px] flex-col gap-4 rounded-[32px] border border-white/10 bg-[rgba(10,12,24,0.82)] px-4 py-5 text-center shadow-[0_25px_60px_rgba(4,5,13,0.65)] sm:px-6">
                   <div className="flex w-full items-center justify-between gap-2 sm:gap-6">
                     <TeamBadgeVisual label={homeName} badge={homeBadge} fallback={homeInitials} />
@@ -265,9 +354,11 @@ export default function QuizPlayPage() {
                           {matchRoundLabel}
                         </div>
                       )}
-                      {match.kickoff_at && (
+                      {matchKickoffDate && (
                         <div className="rounded-full border border-white/10 px-3 py-1 text-xs uppercase tracking-widest text-white/80">
-                          {new Date(match.kickoff_at).toLocaleString('pl-PL')}
+                          {matchHasStarted
+                            ? `Mecz w trakcie · start ${matchKickoffDate.toLocaleString('pl-PL')}`
+                            : matchKickoffDate.toLocaleString('pl-PL')}
                         </div>
                       )}
                     </div>
@@ -276,34 +367,69 @@ export default function QuizPlayPage() {
                 </div>
               )}
 
-              <h2 className="text-center font-headline text-2xl font-extrabold drop-shadow sm:text-3xl md:text-4xl">
-                {q.prompt}
+              <h2 className="text-center font-headline text-2xl font-extrabold drop-shadow sm:text-3xl md:text-4xl mb-4">
+                {getDisplayPrompt(q)}
               </h2>
 
-              {Array.isArray(q.options) || q.kind === 'future_1x2' ? (
-                <div className="mx-auto flex max-w-[720px] flex-wrap justify-center gap-3 sm:gap-4">
-                  {(Array.isArray(q.options) ? q.options : ['1', 'X', '2']).map((opt: any, idx: number) => (
-                    <button
-                      key={`${q.id}-${idx}`}
-                      onClick={() => choose(q.id, opt)}
-                      className={cn(
-                        'group relative min-w-[140px] flex-1 rounded-2xl border border-white/10 px-4 py-3 text-center font-semibold uppercase tracking-wide transition-all duration-200',
-                        value === opt
-                          ? 'bg-[linear-gradient(135deg,rgba(255,102,51,0.95),rgba(187,155,255,0.9))] text-slate-950 shadow-[0_18px_45px_rgba(255,102,51,0.45)]'
-                          : 'bg-[rgba(13,16,28,0.85)] text-white/85 hover:border-white/30 hover:bg-[rgba(22,25,40,0.95)]',
-                      )}
-                    >
-                      {typeof opt === 'string' ? opt : JSON.stringify(opt)}
-                    </button>
-                  ))}
-                </div>
-              ) : q.kind === 'future_score' ? (
-                <ScorePicker value={value as any} onChange={(v: any) => choose(q.id, v)} options={q.options as any} />
-              ) : q.kind === 'history_numeric' ? (
-                <NumericPicker value={value as number} onChange={(v: number) => choose(q.id, v)} options={q.options as any} />
-              ) : (
-                <div className="text-center text-sm text-white/70">Nieobsługiwany тип pytania</div>
-              )}
+              {(() => {
+                const isChoice = Array.isArray(q.options) || q.kind === 'future_1x2'
+                const isNumeric = q.kind === 'history_numeric' || FUTURE_NUMERIC_KINDS.has(q.kind)
+                if (isChoice) {
+                  const showTeamMeta = q.kind !== 'future_1x2'
+                  const choiceOptions = Array.isArray(q.options) ? q.options : ['1', 'X', '2']
+                  return (
+                    <div className="mx-auto flex max-w-[720px] flex-wrap justify-center gap-3 sm:gap-4">
+                      {choiceOptions.map((opt: any, idx: number) => {
+                        const teamMeta = showTeamMeta
+                          ? getOptionTeamMeta(
+                              opt,
+                              homeName,
+                              awayName,
+                              homeBadge,
+                              awayBadge,
+                              homeInitials,
+                              awayInitials,
+                            )
+                          : null
+                        return (
+                          <button
+                            key={`${q.id}-${idx}`}
+                            onClick={() => choose(q.id, opt)}
+                            className={cn(
+                              'group relative min-w-[120px] flex-1 rounded-2xl border border-white/10 px-4 py-3 text-center font-semibold uppercase tracking-wide transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-40',
+                              value === opt
+                                ? 'bg-[linear-gradient(135deg,rgba(255,102,51,0.95),rgba(187,155,255,0.9))] text-slate-950 shadow-[0_18px_45px_rgba(255,102,51,0.45)]'
+                                : 'bg-[rgba(13,16,28,0.85)] text-white/85 hover:border-white/30 hover:bg-[rgba(22,25,40,0.95)]',
+                            )}
+                            disabled={quizLocked}
+                          >
+                            <span className="flex flex-col items-center gap-2">
+                              {teamMeta ? (
+                                <span className="flex h-12 w-12 items-center justify-center rounded-full border border-white/15 bg-white/5 p-2 shadow-[0_12px_30px_rgba(3,4,12,0.65)]">
+                                  {teamMeta.badge ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={teamMeta.badge} alt={teamMeta.name} className="h-full w-full object-contain" />
+                                  ) : (
+                                    <span className="text-sm font-bold text-white">{teamMeta.fallback}</span>
+                                  )}
+                                </span>
+                              ) : null}
+                              <span>{renderOptionLabel(opt)}</span>
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )
+                }
+                if (q.kind === 'future_score') {
+                  return <ScorePicker value={value as any} onChange={(v: any) => choose(q.id, v)} options={q.options as any} />
+                }
+                if (isNumeric) {
+                  return <NumericPicker value={value as number} onChange={(v: number) => choose(q.id, v)} options={q.options as any} />
+                }
+                return <div className="text-center text-sm text-white/70">Nieobsługiwany тип pytania</div>
+              })()}
 
               <div className="mx-auto mt-6 flex max-w-[700px] items-center justify-between gap-3 sm:mt-7">
                 <Button
@@ -318,7 +444,7 @@ export default function QuizPlayPage() {
                   <Button
                     className="rounded-full px-8 shadow-[0_22px_50px_rgba(255,102,51,0.45)]"
                     onClick={() => setStep(s => Math.min(total - 1, s + 1))}
-                    disabled={!isAnswered || submitting}
+                    disabled={!isAnswered || submitting || quizLocked}
                   >
                     Następne
                   </Button>
@@ -326,7 +452,7 @@ export default function QuizPlayPage() {
                   <Button
                     className="rounded-full px-8 shadow-[0_22px_50px_rgba(255,102,51,0.45)]"
                     onClick={submit}
-                    disabled={!isAnswered || submitting}
+                    disabled={!isAnswered || submitting || quizLocked}
                   >
                     {submitting ? 'Wysyłanie…' : 'Prześlij'}
                   </Button>
@@ -354,6 +480,9 @@ function NumericPicker({
   const max = options?.max ?? 6
   const step = options?.step ?? 1
   const v = typeof value === 'number' ? value : min
+  const sliderRange = Math.max(max - min, 1)
+  const fillPercent = Math.min(100, Math.max(0, ((v - min) / sliderRange) * 100))
+  const sliderGradient = `linear-gradient(90deg, rgba(255,102,51,0.95) 0%, rgba(187,155,255,0.95) ${fillPercent}%, rgba(255,255,255,0.15) ${fillPercent}%, rgba(255,255,255,0.08) 100%)`
 
   return (
     <div className="mx-auto max-w-[700px]">
@@ -366,14 +495,15 @@ function NumericPicker({
         max={max}
         step={step}
         value={v}
-        onChange={e => onChange(parseInt(e.target.value))}
-        className="w-full"
+        onChange={e => onChange(Number(e.target.value))}
+        className="numeric-range w-full"
+        style={{ backgroundImage: sliderGradient }}
       />
       <div className="flex justify-between text-sm text-white/70">
         <span>{min}</span>
         <span>{max}+</span>
+        </div>
       </div>
-    </div>
   )
 }
 
@@ -498,7 +628,126 @@ function isQuestionAnswered(kind: string, value: any) {
   if (kind === 'history_numeric') {
     return typeof value === 'number'
   }
+  if (FUTURE_NUMERIC_KINDS.has(kind)) {
+    return typeof value === 'number'
+  }
   if (Array.isArray(value)) return value.length > 0
   if (typeof value === 'object') return Object.keys(value).length > 0
   return String(value).trim() !== ''
+}
+
+function renderOptionLabel(opt: any) {
+  const text = getOptionText(opt)
+  if (text) return text
+  return typeof opt === 'string' ? opt : JSON.stringify(opt)
+}
+
+type OptionTeamMeta = {
+  badge: string | null
+  fallback: string
+  name: string
+}
+
+function getOptionTeamMeta(
+  opt: any,
+  homeName: string,
+  awayName: string,
+  homeBadge: string | null,
+  awayBadge: string | null,
+  homeInitials: string,
+  awayInitials: string,
+): OptionTeamMeta | null {
+  const optionText = getOptionText(opt)
+  if (!optionText) return null
+
+  const alignment = resolveTeamAlignment(opt, optionText, homeName, awayName)
+
+  if (alignment === 'home' && homeName) {
+    return {
+      badge: homeBadge,
+      fallback: homeInitials || getInitials(homeName),
+      name: homeName,
+    }
+  }
+  if (alignment === 'away' && awayName) {
+    return {
+      badge: awayBadge,
+      fallback: awayInitials || getInitials(awayName),
+      name: awayName,
+    }
+  }
+  return null
+}
+
+function resolveTeamAlignment(opt: any, optionText: string, homeName: string, awayName: string): 'home' | 'away' | null {
+  const normalizedText = normalizeLabel(optionText)
+  const normalizedHome = normalizeLabel(homeName)
+  const normalizedAway = normalizeLabel(awayName)
+
+  if (normalizedHome && normalizedText && normalizedText.includes(normalizedHome)) return 'home'
+  if (normalizedAway && normalizedText && normalizedText.includes(normalizedAway)) return 'away'
+
+  const normalizedValue = normalizeLabel(getOptionValue(opt))
+  const normalizedCompact = normalizedText?.replace(/\s+/g, '')
+  const normalizedValueCompact = normalizedValue?.replace(/\s+/g, '')
+
+  const homeSynonyms = ['1', 'home', 'gospodarz', 'dom', 'host', 'h']
+  const awaySynonyms = ['2', 'away', 'gosc', 'goscie', 'guest', 'goście']
+
+  if (
+    (normalizedCompact && homeSynonyms.includes(normalizedCompact)) ||
+    (normalizedValueCompact && homeSynonyms.includes(normalizedValueCompact))
+  ) {
+    return 'home'
+  }
+  if (
+    (normalizedCompact && awaySynonyms.includes(normalizedCompact)) ||
+    (normalizedValueCompact && awaySynonyms.includes(normalizedValueCompact))
+  ) {
+    return 'away'
+  }
+
+  return null
+}
+
+function getOptionText(opt: any): string {
+  if (typeof opt === 'string') return opt
+  if (typeof opt?.label === 'string') return opt.label
+  if (typeof opt?.name === 'string') return opt.name
+  if (typeof opt?.title === 'string') return opt.title
+  if (typeof opt?.team === 'string') return opt.team
+  if (typeof opt?.club === 'string') return opt.club
+  if (typeof opt?.option === 'string') return opt.option
+  if (typeof opt?.value === 'string') return opt.value
+  return ''
+}
+
+function getOptionValue(opt: any): string {
+  if (typeof opt === 'string') return opt
+  if (typeof opt?.value === 'string') return opt.value
+  if (typeof opt?.id === 'string') return opt.id
+  return ''
+}
+
+function normalizeLabel(label?: string | null): string {
+  if (!label) return ''
+  return label
+    .toString()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+}
+
+function getDisplayPrompt(question: Q | null) {
+  if (!question) return ''
+  const raw = question.prompt?.trim() ?? ''
+  if (FUTURE_NUMERIC_KINDS.has(question.kind)) {
+    const fallback = FUTURE_STAT_PROMPTS[question.kind] ?? 'Podaj wartość'
+    if (!raw) return fallback
+    const normalized = raw.toLowerCase()
+    if (LEGACY_1X2_PROMPTS.has(normalized)) return fallback
+    return raw
+  }
+  return raw || 'Pytanie'
 }

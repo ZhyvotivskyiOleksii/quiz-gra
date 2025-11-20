@@ -68,6 +68,13 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
     mode: 'onBlur',
   });
 
+  const renderLabel = (text: string, error?: string, short = false) => (
+    <span className="flex items-baseline gap-2 text-muted-foreground">
+      <span>{text}</span>
+      {error && <span className="text-xs font-semibold text-destructive whitespace-nowrap">— {short ? 'wymagane' : error}</span>}
+    </span>
+  )
+
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
     try {
@@ -209,10 +216,10 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
                       autoComplete="given-name"
                       {...field}
                       error={!!fieldState.error}
-                      label={'Imię'}
+                      label={renderLabel('Imię', form.formState.errors.firstName?.message, true)}
                     />
                   </FormControl>
-                  <FormMessage />
+                  <FormMessage className="sr-only" />
                 </FormItem>
             )}
           />
@@ -226,10 +233,10 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
                       autoComplete="family-name"
                       {...field}
                       error={!!fieldState.error}
-                      label={'Nazwisko'}
+                      label={renderLabel('Nazwisko', form.formState.errors.lastName?.message, true)}
                     />
                   </FormControl>
-                  <FormMessage />
+                  <FormMessage className="sr-only" />
                 </FormItem>
             )}
           />
@@ -245,10 +252,10 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
                   autoComplete="email"
                   {...field}
                   error={!!fieldState.error}
-                  label={'Email'}
+                  label={renderLabel('Email', form.formState.errors.email?.message, true)}
                 />
               </FormControl>
-              <FormMessage />
+              <FormMessage className="sr-only" />
             </FormItem>
           )}
         />
@@ -263,7 +270,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
                   autoComplete="new-password"
                   {...field}
                   error={!!fieldState.error}
-                  label={'Hasło'}
+                  label={renderLabel('Hasło', form.formState.errors.password?.message, true)}
                   rightAdornment={
                     <Button
                       type="button"
@@ -278,7 +285,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
                   }
                 />
               </FormControl>
-              <FormMessage />
+              <FormMessage className="sr-only" />
             </FormItem>
           )}
         />
@@ -290,13 +297,13 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
               <FormControl>
                 <PhoneInputField
                   id="register-phone"
-                  label={'Telefon'}
+                  label={renderLabel('Telefon', form.formState.errors.phone?.message as string | undefined, true)}
                   value={field.value}
                   onChange={field.onChange}
                   error={!!fieldState.error}
                 />
               </FormControl>
-              <FormMessage />
+              <FormMessage className="sr-only" />
             </FormItem>
           )}
         />

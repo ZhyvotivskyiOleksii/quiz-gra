@@ -1,11 +1,10 @@
-import { Button } from '@/components/ui/button'
-import Link from 'next/link'
 import Image from 'next/image'
-import { Timer, ChevronRight, PenSquare } from 'lucide-react'
+import { Timer } from 'lucide-react'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
 import BonusInfoPanel, { BonusQuizSummary } from '@/components/app/bonus-info-panel'
 import { redirect } from 'next/navigation'
+import { QuizActionButton } from '@/components/app/quiz-action-button'
 
 export default async function PlayPage() {
   // Load published quizzes for this view
@@ -29,7 +28,7 @@ export default async function PlayPage() {
 
   const { data: rounds } = await supabase
     .from('rounds')
-    .select('id,label,deadline_at,leagues(name,code),quizzes(*)')
+    .select('id,label,deadline_at,leagues(name,code),matches(kickoff_at),quizzes(*)')
     .neq('status','draft')
     .order('deadline_at',{ ascending: true })
     .limit(8)
@@ -105,6 +104,18 @@ export default async function PlayPage() {
     })
   }
 
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('phone, phone_confirmed_at')
+    .eq('id', user.id)
+    .maybeSingle()
+  const hasPhone =
+    Boolean(profile?.phone) ||
+    Boolean((user as any).phone) ||
+    Boolean((user.user_metadata as any)?.phone)
+  const phoneConfirmed = Boolean(profile?.phone_confirmed_at) || Boolean((user as any).phone_confirmed_at)
+  const needsPhoneGate = !(hasPhone && phoneConfirmed)
+
   return (
     <div className="relative mx-auto flex h-full w-full max-w-[1200px] flex-col space-y-6">
       <div aria-hidden className="pointer-events-none absolute left-1/2 top-[300px] -translate-x-1/2 z-0">
@@ -140,11 +151,18 @@ export default async function PlayPage() {
               const img = q.image_url || '/images/preview.webp'
               const prize = q.prize
               const deadlineTs = new Date(r.deadline_at).getTime()
+              const matchKickoffs = Array.isArray(r.matches)
+                ? r.matches
+                    .map((m: any) => (m?.kickoff_at ? new Date(m.kickoff_at).getTime() : NaN))
+                    .filter((ts): ts is number => typeof ts === 'number' && Number.isFinite(ts))
+                : []
+              const earliestKickoff = matchKickoffs.length ? Math.min(...matchKickoffs) : null
               const now = Date.now()
               const isClosed = Number.isFinite(deadlineTs) ? deadlineTs <= now : false
               const hasSubmission = q.id ? Boolean(submissionMap[q.id]) : false
-              const kickoffLabel = Number.isFinite(deadlineTs)
-                ? new Date(deadlineTs).toLocaleString('pl-PL', {
+              const kickoffSource = Number.isFinite(earliestKickoff ?? NaN) ? earliestKickoff! : deadlineTs
+              const kickoffLabel = Number.isFinite(kickoffSource)
+                ? new Date(kickoffSource).toLocaleString('pl-PL', {
                     month: 'short',
                     day: '2-digit',
                     hour: '2-digit',
@@ -157,10 +175,10 @@ export default async function PlayPage() {
                   ? 'Edytuj typy'
                   : 'Zagraj za darmo'
               return (
-                <div key={r.id} className="group relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-r from-[#3a0d0d] via-[#5a0f0f] to-[#7a1313] p-0 shadow-xl transition-transform hover:-translate-y-0.5 hover:shadow-2xl">
+                <div key={r.id} className="group relative overflow-hidden rounded-[30px] sm:rounded-[34px] bg-gradient-to-r from-[#3a0d0d] via-[#5a0f0f] to-[#7a1313] p-0 shadow-xl">
                   <div className="flex">
-                    <div className="relative w-[55%] min-h-[170px] sm:min-h-[210px] overflow-hidden rounded-r-[40px]">
-                      <Image src={img} alt="Quiz" fill className="object-cover" />
+                    <div className="relative w-[55%] min-h-[170px] sm:min-h-[210px] overflow-hidden rounded-[30px] sm:rounded-[34px]">
+                      <Image src={img} alt="Quiz" fill className="object-cover scale-105 sm:scale-100" />
                       {/* chip */}
                       <div className="absolute top-3 left-3 rounded-full bg-black/70 backdrop-blur-sm text-white text-[11px] px-2 py-1 flex items-center gap-1">
                         <Timer className="h-3.5 w-3.5" /> Koniec za: {formatTimeLeft(r.deadline_at) || '—'}
@@ -178,25 +196,13 @@ export default async function PlayPage() {
                       <div className="mt-1 text-xs text-white/90">{kickoffLabel}</div>
                       <div className="mt-4 self-end">
                         {q.id && (
-                          isClosed ? (
-                            <Button
-                              disabled
-                              className="h-10 rounded-full bg-white/15 text-white/70"
-                            >
-                              {actionLabel}
-                            </Button>
-                          ) : (
-                            <Button
-                              asChild
-                              className={`h-10 rounded-full font-semibold shadow ${hasSubmission ? 'bg-white/15 text-white hover:bg-white/25' : 'bg-yellow-400 text-black hover:bg-yellow-300'}`}
-                            >
-                              <Link href={`/app/quizzes/${q.id}/play`}>
-                                {hasSubmission ? <PenSquare className="mr-1.5 h-4 w-4" /> : null}
-                                {actionLabel}
-                                {!hasSubmission && <ChevronRight className="ml-1 h-4 w-4" />}
-                              </Link>
-                            </Button>
-                          )
+                          <QuizActionButton
+                            quizId={q.id}
+                            isClosed={isClosed}
+                            hasSubmission={hasSubmission}
+                            actionLabel={actionLabel}
+                            needsPhone={needsPhoneGate}
+                          />
                         )}
                       </div>
                     </div>
