@@ -456,6 +456,12 @@ export function Header({ initialAuth }: HeaderProps = {}) {
     router.push('/login');
   }, [resetAuthState, router])
 
+  const logoHref = React.useMemo(() => {
+    if (pathname?.startsWith('/admin')) return '/admin'
+    if (pathname?.startsWith('/app')) return '/app'
+    return '/'
+  }, [pathname]);
+
   return (
     <>
       <header
@@ -464,7 +470,7 @@ export function Header({ initialAuth }: HeaderProps = {}) {
       >
         <div className="relative w-full px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16">
           <div className="mx-auto w-full max-w-screen-2xl flex h-16 items-center">
-          <Logo href="/" />
+          <Logo href={logoHref} />
           <div className="flex flex-1 items-center justify-end space-x-4">
           <nav className="flex items-center space-x-2">
             {(displayName || userEmail || shortId) && (

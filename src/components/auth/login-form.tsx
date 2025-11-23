@@ -53,6 +53,7 @@ export function LoginForm({
   const [otpSent, setOtpSent] = React.useState(false);
   const [otpPhone, setOtpPhone] = React.useState('');
   const [otpCode, setOtpCode] = React.useState('');
+  const [postLoginPending, setPostLoginPending] = React.useState(false);
 
   const destination = React.useMemo(() => {
     if (redirectTo && redirectTo.startsWith('/')) return redirectTo;
@@ -219,6 +220,7 @@ export function LoginForm({
 
         toast({ title: 'Zalogowano pomyślnie!' })
         emitAuthEvent({ type: 'session:refresh' })
+        setPostLoginPending(true)
         router.push(destination);
         
         setIsLoading(false)
@@ -318,6 +320,7 @@ export function LoginForm({
 
         toast({ title: 'Zalogowano pomyślnie!' });
         emitAuthEvent({ type: 'session:refresh' });
+        setPostLoginPending(true);
         router.push(destination);
         
         onSuccess?.({ email: values.email });
@@ -468,6 +471,7 @@ export function LoginForm({
 
       toast({ title: 'Zalogowano pomyślnie!' });
       emitAuthEvent({ type: 'session:refresh' });
+      setPostLoginPending(true);
       router.push(destination);
       
       onSuccess?.();
@@ -480,6 +484,15 @@ export function LoginForm({
     } finally {
       setIsLoading(false);
     }
+  }
+
+  if (postLoginPending) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 py-12">
+        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+        <p className="text-sm text-muted-foreground text-center">Przygotowujemy Twój panel…</p>
+      </div>
+    )
   }
 
   if (isPhoneLogin) {
