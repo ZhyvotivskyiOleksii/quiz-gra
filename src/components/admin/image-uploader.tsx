@@ -11,16 +11,31 @@ import { UploadCloud, Image as ImageIcon, X } from 'lucide-react'
 type Props = {
   value?: string
   onChange: (url: string | undefined) => void
+  onPreviewChange?: (url: string | undefined) => void
   className?: string
 }
 
-export default function ImageUploader({ value, onChange, className }: Props) {
+export default function ImageUploader({ value, onChange, onPreviewChange, className }: Props) {
   const { toast } = useToast()
   const inputRef = React.useRef<HTMLInputElement | null>(null)
   const [busy, setBusy] = React.useState(false)
   const [dragOver, setDragOver] = React.useState(false)
+  const [localPreview, setLocalPreview] = React.useState<string | null>(null)
+  const previewSrc = localPreview || value
 
   const pick = () => inputRef.current?.click()
+
+  React.useEffect(() => {
+    if (!localPreview) return
+    // once parent receives final value, release local preview
+    if (value && value !== localPreview) {
+      URL.revokeObjectURL(localPreview)
+      setLocalPreview(null)
+    }
+    return () => {
+      if (localPreview) URL.revokeObjectURL(localPreview)
+    }
+  }, [value, localPreview])
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement> | File) {
     const file = (e instanceof File) ? e : e.target.files?.[0]
@@ -33,6 +48,9 @@ export default function ImageUploader({ value, onChange, className }: Props) {
       toast({ title: 'Zbyt duży plik', description: 'Maksymalnie 5 MB.', variant: 'destructive' as any })
       return
     }
+    const localUrl = URL.createObjectURL(file)
+    setLocalPreview(localUrl)
+    onPreviewChange?.(localUrl)
     setBusy(true)
     try {
       const supabase = getSupabase()
@@ -44,9 +62,15 @@ export default function ImageUploader({ value, onChange, className }: Props) {
       const { error: upErr } = await supabase.storage.from('quiz-images').upload(path, file, { upsert: true, cacheControl: '3600', contentType: file.type })
       if (upErr) throw upErr
       const { data } = supabase.storage.from('quiz-images').getPublicUrl(path)
+      onPreviewChange?.(data.publicUrl)
       onChange(data.publicUrl)
       toast({ title: 'Obraz przesłany' })
     } catch (e: any) {
+      if (localUrl) {
+        URL.revokeObjectURL(localUrl)
+        setLocalPreview(null)
+        onPreviewChange?.(value)
+      }
       toast({ title: 'Nie udało się przesłać', description: e?.message ?? '', variant: 'destructive' as any })
     } finally { setBusy(false) }
   }
@@ -72,8 +96,8 @@ export default function ImageUploader({ value, onChange, className }: Props) {
       <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile as any} />
       <div className="flex flex-col gap-3">
         <div className="relative overflow-hidden rounded-xl bg-black/20 min-h-[160px]">
-          {value ? (
-            <Image src={value} alt="Podgląd" fill className="object-cover" />
+          {previewSrc ? (
+            <Image src={previewSrc} alt="Podgląd" fill className="object-cover" unoptimized={Boolean(localPreview)} />
           ) : (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center text-sm text-muted-foreground">
               <UploadCloud className="h-8 w-8 mb-2 opacity-80" />
@@ -88,14 +112,24 @@ export default function ImageUploader({ value, onChange, className }: Props) {
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <ImageIcon className="h-4 w-4" />
-            {value ? 'Podgląd załadowanego obrazu' : 'Brak obrazu'}
+            {previewSrc ? 'Podgląd załadowanego obrazu' : 'Brak obrazu'}
           </div>
           <div className="flex items-center gap-2">
-            {value && (
-              <Button size="sm" variant="destructive" onClick={() => onChange(undefined)} disabled={busy}>
-                <X className="h-4 w-4 mr-1" /> Usuń
-              </Button>
-            )}
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => {
+                if (localPreview) {
+                  URL.revokeObjectURL(localPreview)
+                  setLocalPreview(null)
+                }
+                onPreviewChange?.(undefined)
+                onChange(undefined)
+              }}
+              disabled={busy || !previewSrc}
+            >
+              <X className="h-4 w-4 mr-1" /> Usuń
+            </Button>
             <Button size="sm" onClick={pick} disabled={busy}>Wybierz obraz</Button>
           </div>
         </div>

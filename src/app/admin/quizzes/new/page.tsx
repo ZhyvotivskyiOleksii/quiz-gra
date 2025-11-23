@@ -61,6 +61,7 @@ export default function NewQuizPage() {
   const [deadlineAt, setDeadlineAt] = React.useState('')
   const [title, setTitle] = React.useState('')
   const [imageUrl, setImageUrl] = React.useState<string | undefined>(undefined)
+  const [imagePreview, setImagePreview] = React.useState<string | undefined>(undefined)
   const [prize, setPrize] = React.useState('')
   const [prizeBrackets, setPrizeBrackets] = React.useState<PrizeBracketRow[]>(() => seedPrizeBrackets())
   const [publishNow, setPublishNow] = React.useState(true)
@@ -72,6 +73,16 @@ export default function NewQuizPage() {
   const [matchesSource, setMatchesSource] = React.useState<'fixtures' | 'results' | null>(null)
   const [matchesError, setMatchesError] = React.useState<string | null>(null)
   const [matchesInfo, setMatchesInfo] = React.useState<string | null>(null)
+  React.useEffect(() => {
+    if (!imageUrl) {
+      if (!imagePreview || imagePreview?.startsWith('blob:')) return
+      setImagePreview(undefined)
+      return
+    }
+    if (imagePreview === imageUrl) return
+    if (imagePreview && imagePreview.startsWith('blob:')) return
+    setImagePreview(imageUrl)
+  }, [imageUrl])
   // Manual history slots (3) + auto future selection (3)
   type Slot = {
     kind: SlotKind
@@ -1011,9 +1022,9 @@ function curateRecentResults(matches: ScoreBusterMatch[] | undefined, limit: num
               <div className="group relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-r from-[#3a0d0d] via-[#5a0f0f] to-[#7a1313] p-0 shadow-xl min-h-[200px]">
                 <div className="flex h-full">
                   <div className="relative w-[55%] min-h-[170px] md:min-h-[210px] overflow-hidden rounded-r-[40px]">
-                    {imageUrl ? (
+                    {imagePreview || imageUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={imageUrl} alt="podgląd" className="absolute inset-0 h-full w-full object-cover" />
+                      <img src={(imagePreview || imageUrl)!} alt="podgląd" className="absolute inset-0 h-full w-full object-cover" />
                     ) : (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src="/images/preview.webp" alt="podgląd" className="absolute inset-0 h-full w-full object-cover" />
@@ -1038,7 +1049,7 @@ function curateRecentResults(matches: ScoreBusterMatch[] | undefined, limit: num
           </Card>
 
           <div className="text-sm text-muted-foreground">Podgląd karty będzie zaktualizowany po zmianie obrazu.</div>
-          <ImageUploader value={imageUrl} onChange={setImageUrl} />
+          <ImageUploader value={imageUrl} onChange={setImageUrl} onPreviewChange={setImagePreview} />
         </div>
       </div>
 

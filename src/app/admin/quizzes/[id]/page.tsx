@@ -41,6 +41,17 @@ export default function AdminQuizDetailsPage() {
   const [startsAt, setStartsAt] = React.useState('')
   const [deadlineAt, setDeadlineAt] = React.useState('')
   const [imageUrl, setImageUrl] = React.useState('')
+  const [cardImage, setCardImage] = React.useState('')
+  React.useEffect(() => {
+    if (!imageUrl) {
+      if (!cardImage || cardImage.startsWith('blob:')) return
+      setCardImage('')
+      return
+    }
+    if (cardImage === imageUrl) return
+    if (cardImage && cardImage.startsWith('blob:')) return
+    setCardImage(imageUrl)
+  }, [imageUrl])
   const [prize, setPrize] = React.useState<string>('')
   const [prizeBrackets, setPrizeBrackets] = React.useState<PrizeBracketRow[]>([])
   const [saving, setSaving] = React.useState(false)
@@ -69,7 +80,9 @@ export default function AdminQuizDetailsPage() {
     if (qerr || !q) { toast({ title: 'Nie znaleziono wiktoryny', variant: 'destructive' as any }); return }
     setQuiz(q as QuizRow)
     setTitle((q as any).title || '')
-    setImageUrl((q as any).image_url || '')
+    const initialImage = (q as any).image_url || ''
+    setImageUrl(initialImage)
+    setCardImage(initialImage)
     setPrize(((q as any).prize ?? '') as any)
     const { data: r } = await s.from('rounds').select('id,label,starts_at,deadline_at,timezone,status,leagues(name,code)').eq('id', (q as any).round_id).maybeSingle()
     if (r) {
@@ -465,7 +478,7 @@ export default function AdminQuizDetailsPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           <NotchedInput borderless label={'Tytuł wiktoryny'} value={title} onChange={(e:any)=>setTitle(e.target.value)} />
-          <ImageUploader value={imageUrl} onChange={setImageUrl as any} />
+          <ImageUploader value={imageUrl} onChange={setImageUrl as any} onPreviewChange={setCardImage} />
           <NotchedInput
             borderless
             inputMode="numeric"
