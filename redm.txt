@@ -39,41 +39,10 @@ ssh root@45.148.244.75 '
   "
 '
 
-PM2м
-ssh root@45.148.244.75 'su - bugsy -c "pm2 startup systemd -u bugsy --hp /home/bugsy && pm2 save"'
 
 
 
 
-
-💡 Хочешь, чтобы всё было одной командой?
-
-#!/bin/bash
-set -e
-rsync -az --delete --exclude ".next" --exclude "node_modules" \
-  "/Users/oleksiizhyvotivskyi/Desktop/quiz-gra/" \
-  root@45.148.244.75:/home/bugsy/quiz-time.pl/
-
-ssh root@45.148.244.75 '
-  set -e
-  chown -R bugsy:bugsy /home/bugsy/quiz-time.pl
-  su - bugsy -c "
-    [ -s ~/.nvm/nvm.sh ] && . ~/.nvm/nvm.sh && nvm use 22.20.0 >/dev/null
-    cd /home/bugsy/quiz-time.pl
-    npm ci --no-audit --no-fund
-    NODE_ENV=production npm run build
-    pm2 delete quiz-time >/dev/null 2>&1 || true
-    PORT=3005 pm2 start npm --name quiz-time --cwd /home/bugsy/quiz-time.pl -- start -- -p 3005
-    pm2 save
-  "
-'
-
-
-
-
-потом 
-chmod +x deploy-quiz-time.sh
-./deploy-quiz-time.sh
 
 
 
@@ -108,24 +77,17 @@ curl -i "https://usjnxyedapxkymlwicju.supabase.co/auth/v1/otp" \
 
 
 
+========
+curl -i "https://usjnxyedapxkymlwicju.supabase.co/auth/v1/otp" \
+  -H "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzam54eWVkYXB4a3ltbHdpY2p1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE2NTQ3ODgsImV4cCI6MjA3NzIzMDc4OH0.jmkGyOXAjDHiw-5ptVmqeelTb9WqTCZL2Rv7VeNgzo0" \
+  -H "Content-Type: application/json" \
+  -d '{"phone":"+48572245574","type":"sms"}'
+
+===========
 
 
 
 
-  база даних таблиці 
-
-
-  sudo docker run --rm \
-  -e PGPASSWORD="JElgi76QRsdxqi3X" \
-  postgres:latest \
-  pg_dump \
-    --schema-only \
-    --no-owner \
-    --host=db.usjnxyedapxkymlwicju.supabase.co \
-    --port=5432 \
-    --username=postgres \
-    --dbname=postgres \
-  > quiztime_schema.sql
 
 
 

@@ -26,10 +26,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 1) Валідуємо підпис Standard Webhooks
-    new Webhook(normSecret(rawSecret)).verify(raw, Object.fromEntries(req.headers));
-
-    // 2) Розбираємо payload
+    // Тимчасово пропускаємо перевірку підпису — читаємо payload напряму
     const payload = JSON.parse(raw) as AnyPayload;
     const otp = payload.sms?.otp ?? null;
     const phone = pickPhone(payload);

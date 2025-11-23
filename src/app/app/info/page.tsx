@@ -46,7 +46,7 @@ export default async function BonusInfoPage() {
   } = await supabase.auth.getSession()
 
   if (!session) {
-    redirect('/?auth=login')
+    redirect('/login')
   }
 
   return (

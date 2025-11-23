@@ -24,7 +24,7 @@ export default async function AdminDashboard() {
   const {
     data: { session },
   } = await authClient.auth.getSession()
-  if (!session) redirect('/?auth=login')
+  if (!session) redirect('/login')
 
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL

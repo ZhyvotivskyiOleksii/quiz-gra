@@ -1,0 +1,342 @@
+// --- cPanel: Publish (create domain if needed, upload ZIP, extract) ---
+const publishSchema = z.object({
+  userId: z.string().optional(),
+  siteName: z.string().optional(),
+  host: z.string().min(3),
+  user: z.string().min(1),
+  token: z.string().min(10),
+  domain: z.string().min(1),
+  docRoot: z.string().min(1),
+  files: z.string().min(2), // JSON stringified Record<string,string>
+});
+
+export async function publishToCpanelAction(prev: any, formData: FormData): Promise<{ success: boolean; url?: string; log?: string[]; error?: string }>{
+  const parsed = publishSchema.safeParse({
+    userId: formData.get('userId'),
+    siteName: formData.get('siteName'),
+    host: formData.get('host'),
+    user: formData.get('user'),
+    token: formData.get('token'),
+    domain: formData.get('domain'),
+    docRoot: formData.get('docRoot'),
+    files: formData.get('files'),
+  });
+  if (!parsed.success) {
+    return { success: false, error: 'Missing or invalid publish fields' };
+  }
+  const { userId, siteName, host, user, token, domain, docRoot } = parsed.data;
+
+  try {
+    const files: Record<string, string> = JSON.parse(parsed.data.files);
+
+    // Build ZIP from files (+ enrich with referenced public assets like images/* and games/*, including CSS url(...))
+    const zip = new JSZip();
+    const normalizeAssetPath = (raw: string): string | null => {
+      try {
+        const u = (raw || '').trim();
+        if (!u || /^data:/i.test(u) || /^https?:/i.test(u)) return null;
+        let p = u.replace(/["']/g, '').split('?')[0].split('#')[0];
+        p = p.replace(/^\.?\//, '');
+        const idxImg = p.toLowerCase().lastIndexOf('images/');
+        const idxGame = p.toLowerCase().lastIndexOf('games/');
+        const idx = idxImg >= 0 ? idxImg : idxGame;
+        if (idx < 0) return null;
+        return p.slice(idx);
+      } catch { return null; }
+    };
+    const stripPreviewArtifacts = (html: string): string => {
+      try {
+        if (!html || typeof html !== 'string') return html;
+        const patterns: RegExp[] = [
+          /<script[^>]*>[\s\S]*?postMessage\(\{\s*type:\s*['\"]open-path['\"][\s\S]*?<\/script>/gi,
+          /<script[^>]*>[\s\S]*?data-preview-path[\s\S]*?<\/script>/gi,
+          /<script[^>]*>[\s\S]*?wg-set-inspector[\s\S]*?<\/script>/gi,
+          /<script[^>]*>[\s\S]*?wg-hover-highlight[\s\S]*?<\/script>/gi,
+        ];
+        let out = html;
+        for (const rx of patterns) out = out.replace(rx, '');
+        return out;
+      } catch { return html; }
+    };
+    // 1) Add provided files (skip empty placeholders)
+    for (const [p, c] of Object.entries(files)) {
+      let content = String(c ?? '');
+      if (/\.html?$/i.test(p)) content = stripPreviewArtifacts(content);
+      if (content.trim().length === 0) continue; // skip 0-byte placeholders
+      if (typeof content === 'string' && content.startsWith('data:')) {
+        const b64 = content.split(',')[1];
+        zip.file(p, b64, { base64: true });
+      } else {
+        zip.file(p, content);
+      }
+    }
+    // 2) Collect referenced assets from HTML & CSS and add missing ones from public/
+    try {
+      const referenced = new Set<string>();
+      // Keep a supplemental map of assets we pull from public so that
+      // the per-file fallback upload can include them too (when extract is unavailable)
+      const supplementalAssets: Map<string, Buffer> = new Map();
+      for (const [p, c] of Object.entries(files)) {
+        if (!/\.html?$/i.test(p)) continue;
+        const html = String(c || '');
+        // Capture both relative (images/...) and root-absolute (/images/...) references
+        const rxImg = /(src|href)=("|')(?:\/)?(images\/[^"']+?)\2/gi;
+        const rxGame = /(src|href)=("|')(?:\/)?(games\/[^"']+?)\2/gi;
+        const rxAbs = /(src|href)=("|')https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?\/(images|games)\/([^"']+?)\2/gi;
+        let m: RegExpExecArray | null;
+        while ((m = rxImg.exec(html))) referenced.add(m[3]);
+        while ((m = rxGame.exec(html))) referenced.add(m[3]);
+        while ((m = rxAbs.exec(html))) referenced.add(`${m[3]}/${m[4]}`);
+      }
+      for (const [p, c] of Object.entries(files)) {
+        if (!/\.css$/i.test(p)) continue;
+        const css = String(c || '');
+        const rxUrl = /url\(([^)]+)\)/gi;
+        let um: RegExpExecArray | null;
+        while ((um = rxUrl.exec(css))) {
+          const norm = normalizeAssetPath((um[1] || '').trim().replace(/^['\"]|['\"]$/g, ''));
+          if (norm) referenced.add(norm);
+        }
+      }
+      const basePublic = path.join(process.cwd(), 'public');
+      // images first
+      for (const asset of referenced) {
+        if (!asset.startsWith('images/')) continue;
+        const val = (files as any)[asset];
+        const hasUsefulContent = typeof val === 'string' ? val.trim().length > 0 : !!val;
+        if (hasUsefulContent) continue;
+        try {
+          const disk = path.join(basePublic, asset);
+          const buf = await fs.readFile(disk);
+          zip.file(asset, buf);
+          supplementalAssets.set(asset, buf);
+        } catch {}
+      }
+      // games: add entire folder if any file under it referenced
+      const gameFolders = new Set<string>();
+      for (const asset of referenced) {
+        const m = asset.match(/^games\/([^\/]+)/);
+        if (m) gameFolders.add(m[1]);
+      }
+      for (const folder of gameFolders) {
+        const gameDir = path.join(basePublic, 'games', folder);
+        const walk = async (dir: string, rel: string = '') => {
+          try {
+            const entries = await fs.readdir(dir, { withFileTypes: true });
+            for (const ent of entries) {
+              const abs = path.join(dir, ent.name);
+              const r = path.join(rel, ent.name);
+              if (ent.isDirectory()) {
+                await walk(abs, r);
+              } else {
+                const buf = await fs.readFile(abs);
+                zip.file(path.posix.join('games', folder, r.split(path.sep).join('/')), buf);
+                supplementalAssets.set(path.posix.join('games', folder, r.split(path.sep).join('/')), buf);
+              }
+            }
+          } catch {}
+        };
+        await walk(gameDir);
+      }
+      // Attach the supplemental map to the zip object for fallback branch via a symbol property
+      // (simple approach: capture in closure scope)
+      (zip as any)._wgSupplemental = supplementalAssets;
+    } catch {}
+    const zipBlobBase64 = await zip.generateAsync({ type: 'base64' });
+    const zipBuffer = Buffer.from(zipBlobBase64, 'base64');
+
+    const base = host.startsWith('http') ? host : `https://${host}`;
+    const authHeader = { Authorization: `cpanel ${user}:${token}` } as Record<string, string>;
+    const log: string[] = [];
+    const dirRel = docRoot.replace(/^\/+/, '');
+    const zipRel = `${dirRel}/site.zip`;
+
+    // 1) Check if domain exists
+    const listResp = await fetch(`${base}/execute/DomainInfo/list_domains`, { headers: authHeader, cache: 'no-store' });
+    if (!listResp.ok) return { success: false, error: `DomainInfo failed: HTTP ${listResp.status}` };
+    const listJson: any = await listResp.json().catch(() => ({}));
+    const all = [
+      listJson?.data?.main_domain,
+      ...(listJson?.data?.addon_domains || []),
+      ...(listJson?.data?.parked_domains || []),
+      ...(listJson?.data?.sub_domains || []),
+    ].filter(Boolean);
+    const exists = all.some((d: any) => (typeof d === 'string' ? d : d?.domain) === domain);
+    if (!exists) {
+      // Try to create addon domain
+      // cPanel API for creating an addon domain requires `newdomain`.
+      // The `subdomain` parameter should be just the first part of the domain name (e.g., 'blog' from 'blog.example.com').
+      const subdomainPart = domain.split('.')[0];
+      const addUrl = `${base}/json-api/cpanel?cpanel_jsonapi_version=2&cpanel_jsonapi_module=AddonDomain&cpanel_jsonapi_func=addaddondomain&newdomain=${encodeURIComponent(domain)}&subdomain=${encodeURIComponent(subdomainPart)}&dir=${encodeURIComponent(docRoot)}`;
+      const addResp = await fetch(addUrl, { headers: authHeader, cache: 'no-store' });
+      const addJson: any = await addResp.json().catch(() => ({}));
+      if (!addResp.ok || addJson?.cpanelresult?.error) {
+        return { success: false, error: `AddonDomain add failed: ${addJson?.cpanelresult?.error || addResp.status}` };
+      }
+      log.push('Addon domain created');
+    } else {
+      log.push('Domain already exists, skipping create');
+    }
+
+    // 2) Ensure parent dir exists (optional safety)
+    const parentDir = docRoot.replace(/\/+$/,'').split('/').slice(0, -1).join('/') || '/';
+    // Ensure parent first, then docRoot
+    await fetch(`${base}/execute/Fileman/mkdir?path=${encodeURIComponent(parentDir)}`, { headers: authHeader }).catch(() => {});
+    await fetch(`${base}/execute/Fileman/mkdir?path=${encodeURIComponent(docRoot)}`, { headers: authHeader }).catch(() => {});
+
+    // 3) Upload ZIP (use file-1 key for better compatibility)
+    const form = new FormData();
+    form.append('dir', docRoot);
+    form.append('file', new Blob([zipBuffer], { type: 'application/zip' }), 'site.zip');
+    let upResp = await fetch(`${base}/execute/Fileman/upload_files`, { method: 'POST', headers: authHeader as any, body: form as any });
+    const upJson: any = await upResp.json().catch(() => ({}));
+    if (!upResp.ok || (upJson?.status !== 1 && upJson?.status !== true)) {
+      // retry with relative and both keys
+      const form2 = new FormData();
+      form2.append('dir', dirRel);
+      form2.append('file', new Blob([zipBuffer], { type: 'application/zip' }), 'site.zip');
+      upResp = await fetch(`${base}/execute/Fileman/upload_files`, { method: 'POST', headers: authHeader as any, body: form2 as any });
+      const up2Json: any = await upResp.json().catch(() => ({}));
+      if (!upResp.ok || (up2Json?.status !== 1 && up2Json?.status !== true)) {
+        const form3 = new FormData();
+        form3.append('dir', dirRel);
+        form3.append('file-1', new Blob([zipBuffer], { type: 'application/zip' }), 'site.zip');
+        upResp = await fetch(`${base}/execute/Fileman/upload_files`, { method: 'POST', headers: authHeader as any, body: form3 as any });
+        const up3Json: any = await upResp.json().catch(() => ({}));
+        if (!upResp.ok || (up3Json?.status !== 1 && up3Json?.status !== true)) {
+          return { success: false, error: `Upload failed: HTTP ${upResp.status} ${(up3Json?.errors || up3Json?.error || upJson?.error || '').toString()}` };
+        }
+      }
+    }
+    log.push('ZIP uploaded');
+
+    // 4) Extract
+    let exResp = await fetch(`${base}/execute/Fileman/extract_archive`, { method: 'POST', headers: { ...authHeader, 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ dir: dirRel, file: 'site.zip', overwrite: '1' }) });
+    const exJson: any = await exResp.json().catch(() => ({}));
+    if (!exResp.ok || (exJson?.status !== 1 && exJson?.status !== true)) {
+      // Fallback to API2 (some hosts disable UAPI Fileman::extract_archive)
+      let api2Url = `${base}/json-api/cpanel?cpanel_jsonapi_version=2&cpanel_jsonapi_module=Fileman&cpanel_jsonapi_func=extract_archive&dir=${encodeURIComponent(dirRel)}&file=${encodeURIComponent(zipRel)}&overwrite=1`;
+      let ex2Resp = await fetch(api2Url, { headers: authHeader });
+      const ex2Json: any = await ex2Resp.json().catch(() => ({}));
+      // Consider success if HTTP ok and no explicit error field
+      let ok2 = ex2Resp.ok && !(ex2Json?.cpanelresult?.error);
+      if (!ok2) {
+        // Try absolute path
+        api2Url = `${base}/json-api/cpanel?cpanel_jsonapi_version=2&cpanel_jsonapi_module=Fileman&cpanel_jsonapi_func=extract_archive&dir=${encodeURIComponent(docRoot)}&file=${encodeURIComponent(docRoot + '/site.zip')}&overwrite=1`;
+        ex2Resp = await fetch(api2Url, { headers: authHeader });
+        const ex2bJson: any = await ex2Resp.json().catch(() => ({}));
+        ok2 = ex2Resp.ok && !(ex2bJson?.cpanelresult?.error);
+      }
+      if (!ok2) {
+        // Fall back to per-file upload (no extract supported)
+        log.push('Extract not available, switching to per-file upload…');
+        // Create dirs and upload files one by one
+        const ensureDir = async (fullPath: string) => {
+          try {
+            // try relative then absolute
+            await fetch(`${base}/execute/Fileman/mkdir?path=${encodeURIComponent(fullPath.replace(/^\/+/, ''))}`, { headers: authHeader });
+            await fetch(`${base}/execute/Fileman/mkdir?path=${encodeURIComponent(fullPath)}`, { headers: authHeader });
+          } catch {}
+        };
+        // Ensure base docRoot exists
+        await ensureDir(docRoot);
+        let uploaded = 0;
+        const guessMime = (filename: string) => {
+          const ext = filename.split('.').pop()?.toLowerCase() || '';
+          switch (ext) {
+            case 'html': return 'text/html';
+            case 'css': return 'text/css';
+            case 'js': return 'application/javascript';
+            case 'json': return 'application/json';
+            case 'svg': return 'image/svg+xml';
+            default: return 'application/octet-stream';
+          }
+        };
+        // Merge original files + supplemental assets (from public) into one iterable
+        const supplemental: Map<string, Buffer> = (zip as any)._wgSupplemental || new Map();
+        const entries: Array<{ path: string; blob: Blob; dir: string; name: string }> = [];
+        // Original provided files
+        for (const [p, raw] of Object.entries(files)) {
+          let content = /\.html?$/i.test(p) ? stripPreviewArtifacts(String(raw ?? '')) : String(raw ?? '');
+          if (content.trim().length === 0) continue; // skip empty
+          const parts = p.split('/');
+          const name = parts.pop() as string;
+          const dir = parts.length ? `${docRoot}/${parts.join('/')}` : docRoot;
+          const isData = content.startsWith('data:');
+          if (isData) {
+            const bin = Buffer.from(content.split(',')[1] || '', 'base64');
+            entries.push({ path: p, dir, name, blob: new Blob([bin]) });
+          } else {
+            const mime = guessMime(name);
+            entries.push({ path: p, dir, name, blob: new Blob([Buffer.from(content, 'utf8')], { type: mime }) });
+          }
+        }
+        // Supplemental assets from public (binary buffers)
+        for (const [sp, buf] of supplemental) {
+          const parts = sp.split('/');
+          const name = parts.pop() as string;
+          const dir = parts.length ? `${docRoot}/${parts.join('/')}` : docRoot;
+          entries.push({ path: sp, dir, name, blob: new Blob([buf]) });
+        }
+        // Upload all entries
+        for (const e of entries) {
+          await ensureDir(e.dir);
+          const f = new FormData();
+          f.append('dir', e.dir.replace(/^\/+/, ''));
+          f.append('file-1', e.blob, e.name);
+          let resp = await fetch(`${base}/execute/Fileman/upload_files`, { method: 'POST', headers: authHeader as any, body: f as any });
+          if (!resp.ok) {
+            const f2 = new FormData();
+            f2.append('dir', e.dir);
+            f2.append('file-1', e.blob, e.name);
+            resp = await fetch(`${base}/execute/Fileman/upload_files`, { method: 'POST', headers: authHeader as any, body: f2 as any });
+            if (!resp.ok) throw new Error('upload_files failed');
+          }
+          uploaded++;
+        }
+        log.push(`Uploaded ${uploaded} files (no extract).`);
+      } else {
+        log.push('Archive extracted (API2)');
+      }
+    } else {
+      log.push('Archive extracted');
+    }
+
+    // Verify content exists (some hosts return 200 but still fail silently)
+    try {
+      const verify = await fetch(`${base}/execute/Fileman/list_files?dir=${encodeURIComponent(docRoot)}&types=file&limit=1`, { headers: authHeader });
+      if (!verify.ok) log.push('Verification skipped (list_files not ok)');
+      else log.push('Verified files in docroot');
+    } catch {}
+
+    // 5) Optionally remove ZIP (best-effort)
+    // Try delete for both relative and absolute paths
+    await fetch(`${base}/execute/Fileman/delete?path=${encodeURIComponent(zipRel)}`, { headers: authHeader }).catch(() => {});
+    await fetch(`${base}/execute/Fileman/delete?path=${encodeURIComponent(docRoot + '/site.zip')}`, { headers: authHeader }).catch(() => {});
+    log.push('ZIP removed');
+
+    // --- Save deployment record to Supabase ---
+    if (userId && siteName && domain) {
+        try {
+            const sbAdmin = await getSbService();
+            const { error: dbError } = await sbAdmin.from('publish_deploys').insert({
+                user_id: userId,
+                domain: domain,
+                docroot: docRoot,
+                zip_size_bytes: zipBuffer.length,
+                status: 'succeeded',
+                url: `https://${domain}`,
+                log: log,
+            });
+            if (dbError) log.push(`DB Save Error: ${dbError.message}`);
+            else log.push('Deployment record saved.');
+        } catch (dbError: any) {
+            log.push(`DB Save Exception: ${dbError.message}`);
+        }
+    }
+
+    return { success: true, url: `https://${domain}`, log };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'Unexpected error during publish' };
+  }
+}

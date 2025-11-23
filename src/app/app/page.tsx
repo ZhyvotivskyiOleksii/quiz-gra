@@ -51,20 +51,29 @@ export default async function AppDashboard() {
     },
   )
   const {
-    data: { session },
-  } = await supabase.auth.getSession()
-  if (!session) redirect('/?auth=login')
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
 
   const now = new Date()
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
   const monthLabel = now.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' })
 
-  const { data: userResults = [] } = (await supabase
-    .from('quiz_results')
-    .select('points,total_correct,total_questions,submitted_at,quizzes(title,rounds(label))')
-    .eq('user_id', session.user.id)
-    .order('submitted_at', { ascending: false })) as { data: UserResultRow[] }
+  let userResults: UserResultRow[] = []
+  try {
+    const { data: userResultsData, error: userResultsError } = await supabase
+      .from('quiz_results')
+      .select('points,total_correct,total_questions,submitted_at,quizzes(title,rounds(label))')
+      .eq('user_id', user.id)
+      .order('submitted_at', { ascending: false })
+
+    if (!userResultsError) {
+      userResults = (userResultsData as UserResultRow[] | null) || []
+    }
+  } catch (err) {
+    userResults = []
+  }
 
   const totalPoints = userResults.reduce((sum, row) => sum + (row.points ?? 0), 0)
   const weeklyPoints = userResults.reduce(
@@ -72,25 +81,52 @@ export default async function AppDashboard() {
     0,
   )
 
-  const { data: submissions = [] } = await supabase
-    .from('quiz_submissions')
-    .select('created_at')
-    .eq('user_id', session.user.id)
-    .order('created_at', { ascending: false })
+  let submissions: Array<{ created_at: string | null }> = []
+  try {
+    const { data: submissionsData, error: submissionsError } = await supabase
+      .from('quiz_submissions')
+      .select('created_at')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
 
+    if (!submissionsError) {
+      submissions = submissionsData || []
+    }
+  } catch (err) {
+    submissions = []
+  }
   const totalAttempts = submissions.length
   const weeklyAttempts = submissions.filter((s) => s.created_at && new Date(s.created_at) >= weekAgo).length
   const recentResults = userResults.slice(0, 4)
 
-  const { data: monthlyResults = [] } = await supabase
-    .from('quiz_results')
-    .select('user_id,rank,prize_awarded')
-    .gte('submitted_at', monthStart.toISOString())
+  let monthlyResults: MonthlyResultRow[] = []
+  let monthlySubmissions: MonthlySubmissionRow[] = []
+  
+  try {
+    const { data: monthlyResultsData, error: monthlyResultsError } = await supabase
+      .from('quiz_results')
+      .select('user_id,rank,prize_awarded')
+      .gte('submitted_at', monthStart.toISOString())
 
-  const { data: monthlySubmissions = [] } = await supabase
-    .from('quiz_submissions')
-    .select('user_id')
-    .gte('submitted_at', monthStart.toISOString())
+    if (!monthlyResultsError) {
+      monthlyResults = (monthlyResultsData as MonthlyResultRow[] | null) || []
+    }
+  } catch (err) {
+    monthlyResults = []
+  }
+
+  try {
+    const { data: monthlySubmissionsData, error: monthlySubmissionsError } = await supabase
+      .from('quiz_submissions')
+      .select('user_id')
+      .gte('submitted_at', monthStart.toISOString())
+
+    if (!monthlySubmissionsError) {
+      monthlySubmissions = (monthlySubmissionsData as MonthlySubmissionRow[] | null) || []
+    }
+  } catch (err) {
+    monthlySubmissions = []
+  }
 
   const participantsSet = new Set<string>()
   ;(monthlySubmissions as MonthlySubmissionRow[]).forEach((row) => {
@@ -106,13 +142,21 @@ export default async function AppDashboard() {
 
   const profileNameMap = new Map<string, string>()
   if (profileIds.size > 0) {
-    const { data: profileRows = [] } = (await supabase
-      .from('profiles')
-      .select('id,display_name')
-      .in('id', Array.from(profileIds))) as { data: ProfileRow[] }
-    ;(profileRows || []).forEach((profile) => {
-      if (profile?.id) profileNameMap.set(profile.id, profile.display_name?.trim() || '')
-    })
+    try {
+      const { data: profileRowsData, error: profileRowsError } = await supabase
+        .from('profiles')
+        .select('id,display_name')
+        .in('id', Array.from(profileIds))
+
+      if (!profileRowsError) {
+        const profileRows = (profileRowsData as ProfileRow[] | null) || []
+        profileRows.forEach((profile) => {
+          if (profile?.id) profileNameMap.set(profile.id, profile.display_name?.trim() || '')
+        })
+      }
+    } catch (err) {
+      // Silently handle profile fetch errors
+    }
   }
 
   const winsMap = new Map<
@@ -124,7 +168,7 @@ export default async function AppDashboard() {
     }
   >()
 
-  ;(monthlyResults as MonthlyResultRow[] | null)?.forEach((row) => {
+  ;(monthlyResults as MonthlyResultRow[]).forEach((row) => {
     if (!row?.user_id) return
     const earnedPrize = row.prize_awarded && Number(row.prize_awarded) > 0
     const isRankWinner = row.rank === 1
@@ -139,7 +183,7 @@ export default async function AppDashboard() {
   const sortedWinners = [...allWinners].sort((a, b) => b.wins - a.wins)
   const totalWins = sortedWinners.reduce((sum, row) => sum + row.wins, 0)
   const leaderboard = sortedWinners.slice(0, 10)
-  const userRankPosition = sortedWinners.findIndex((row) => row.userId === session.user.id)
+  const userRankPosition = sortedWinners.findIndex((row) => row.userId === user.id)
   const userRank = userRankPosition >= 0 ? userRankPosition + 1 : null
 
   const statCards = getStatCards(

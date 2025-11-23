@@ -16,6 +16,8 @@ import { Header } from '@/components/shared/header'
 import { usePathname, useRouter } from 'next/navigation'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { getSupabase } from '@/lib/supabaseClient'
+import { emitAuthEvent, subscribeToAuthEvents } from '@/lib/auth-events'
+import { performClientLogout } from '@/lib/logout-client'
 
 type AdminShellProps = {
   children: React.ReactNode
@@ -35,16 +37,40 @@ export function AdminShellClient({ children, initialAuth }: AdminShellProps) {
   const [avatarUrl, setAvatarUrl] = React.useState<string | undefined>(initialAuth.avatarUrl || undefined)
   const [displayName, setDisplayName] = React.useState<string | undefined>(initialAuth.displayName || undefined)
   const [shortId, setShortId] = React.useState<string | undefined>(initialAuth.shortId || undefined)
-
+  const supabaseRef = React.useRef<ReturnType<typeof getSupabase> | null>(null)
+  const mountedRef = React.useRef(true)
+  const loggingOutRef = React.useRef(false)
   React.useEffect(() => {
-    const supabase = getSupabase()
-    async function hydrate(user: any | null) {
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
+  const [bootstrapping, setBootstrapping] = React.useState(() => !initialAuth?.email)
+  const [hasSession, setHasSession] = React.useState<boolean>(Boolean(initialAuth?.email))
+
+  const resetAdminState = React.useCallback(() => {
+    setUserEmail(undefined)
+    setAvatarUrl(undefined)
+    setDisplayName(undefined)
+    setShortId(undefined)
+    setHasSession(false)
+  }, [])
+
+  const applyUser = React.useCallback(
+    async (user: any | null, supabaseClient?: ReturnType<typeof getSupabase>) => {
+      const supabase = supabaseClient ?? supabaseRef.current ?? getSupabase()
+      supabaseRef.current = supabase
+      if (!mountedRef.current) return
+
       if (!user) {
         setUserEmail(undefined)
         setAvatarUrl(undefined)
         setDisplayName(undefined)
+        setShortId(undefined)
         return
       }
+
       const emailFromUser =
         user.email ??
         (user.user_metadata?.email as string | undefined) ??
@@ -56,35 +82,114 @@ export function AdminShellClient({ children, initialAuth }: AdminShellProps) {
       const ln = (user.user_metadata?.last_name as string | undefined) || ''
       const fallbackName = `${fn} ${ln}`.trim() || (emailFromUser?.split('@')[0] ?? 'User')
       setDisplayName((prev) => prev ?? fallbackName)
+      // Preserve current shortId before updating
+      const preservedShortId = shortId || initialAuth.shortId
+      
       try {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('avatar_url, display_name')
+          .select('avatar_url, display_name, short_id')
           .eq('id', user.id)
           .maybeSingle()
+        if (!mountedRef.current) return
         if (profile?.avatar_url) setAvatarUrl(profile.avatar_url as any)
         if (profile?.display_name) setDisplayName((profile.display_name as any) || fallbackName)
+        // Use short_id from profile if available
+        if (profile?.short_id && !shortId) {
+          setShortId(String(profile.short_id))
+        }
       } catch {}
       try {
-        const { data: rpcData } = await supabase.rpc('get_or_create_short_id')
-        if (rpcData) setShortId(String(rpcData))
-      } catch {}
-    }
+        const { data: rpcData, error: rpcError } = await supabase.rpc('get_or_create_short_id')
+        if (!mountedRef.current) return
+        if (rpcError) {
+          // Keep existing shortId if RPC fails
+          if (preservedShortId) {
+            setShortId(preservedShortId)
+          }
+        } else if (rpcData) {
+          setShortId(String(rpcData))
+        } else if (preservedShortId) {
+          // Fallback to preserved shortId if RPC returns null
+          setShortId(preservedShortId)
+        }
+      } catch {
+        // Keep existing shortId if RPC fails
+        if (preservedShortId && !mountedRef.current) return
+        if (preservedShortId) {
+          setShortId(preservedShortId)
+        }
+      }
+    },
+    [],
+  )
+
+  const hydrateUser = React.useCallback(async () => {
+    const supabase = supabaseRef.current ?? getSupabase()
+    supabaseRef.current = supabase
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    await applyUser(user ?? null, supabase)
+  }, [applyUser])
+
+  React.useEffect(() => {
+    const supabase = supabaseRef.current ?? getSupabase()
+    supabaseRef.current = supabase
+    let cancelled = false
 
     ;(async () => {
       const {
         data: { user },
       } = await supabase.auth.getUser()
-      await hydrate(user)
+      if (!cancelled) {
+        await applyUser(user ?? null, supabase)
+        setHasSession(Boolean(user))
+        setBootstrapping(false)
+      }
     })()
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_evt, session) => {
-      hydrate(session?.user ?? null)
+    const { data: sub } = supabase.auth.onAuthStateChange(async (evt, sess) => {
+      if (cancelled || loggingOutRef.current) return
+      
+      // If signed out, immediately reset state and stop
+      if (evt === 'SIGNED_OUT' || !sess) {
+        if (!loggingOutRef.current) {
+          resetAdminState()
+          setHasSession(false)
+        }
+        return
+      }
+      
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+        if (cancelled || loggingOutRef.current) return
+        await applyUser(user ?? null, supabase)
+        setHasSession(Boolean(user))
+      } catch {
+        if (cancelled || loggingOutRef.current) return
+        await applyUser(null, supabase)
+        setHasSession(false)
+      }
     })
     return () => {
+      cancelled = true
       sub.subscription.unsubscribe()
     }
-  }, [])
+  }, [applyUser])
+
+  React.useEffect(() => {
+    return subscribeToAuthEvents((event) => {
+      if (event.type === 'profile:update' || event.type === 'session:refresh') {
+        hydrateUser()
+      }
+      if (event.type === 'session:logout') {
+        resetAdminState()
+      }
+    })
+  }, [hydrateUser, resetAdminState])
 
   const menuItems = [
     { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
@@ -99,21 +204,46 @@ export function AdminShellClient({ children, initialAuth }: AdminShellProps) {
 
   const handleNavigate = (href: string) => router.push(href)
 
-  const handleLogout = async () => {
-    const s = getSupabase()
+  const redirectHome = React.useCallback(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        window.location.replace('/')
+        return
+      } catch {}
+    }
     try {
-      await s.auth.signOut()
+      router.replace('/')
+      router.refresh()
     } catch {}
+  }, [router])
+
+  const handleLogout = React.useCallback(async () => {
+    loggingOutRef.current = true
+    resetAdminState()
+    emitAuthEvent({ type: 'session:logout' })
+    
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.clear()
+        window.sessionStorage.clear()
+      } catch {}
+    }
+    
     try {
-      await fetch('/auth/callback', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ event: 'SIGNED_OUT' }),
-      })
-    } catch {}
-    router.push('/')
-  }
+      await performClientLogout()
+    } finally {
+      loggingOutRef.current = false
+    }
+    
+    router.push('/login');
+  }, [resetAdminState, router])
+
+  React.useEffect(() => {
+    if (bootstrapping || loggingOutRef.current) return
+    if (!hasSession) {
+      redirectHome()
+    }
+  }, [bootstrapping, hasSession, redirectHome])
 
   const getActiveState = (itemHref: string) => (itemHref === '/admin' ? pathname === itemHref : pathname.startsWith(itemHref))
 

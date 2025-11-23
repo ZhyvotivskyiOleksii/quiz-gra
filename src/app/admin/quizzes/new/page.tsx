@@ -177,17 +177,20 @@ export default function NewQuizPage() {
     setLeaguesLoading(true)
     setLeaguesError(null)
     try {
-      const s = getSupabase()
-      const { data, error } = await s.from('leagues').select('id,name,code').order('name')
-      if (error) throw error
-      setLeagues(data || [])
-      if (!data?.length) {
+      const res = await fetch('/api/admin/leagues', { cache: 'no-store' })
+      const payload = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(payload?.error || 'Nie udało się pobrać lig.')
+      }
+      const rows = Array.isArray(payload?.data) ? (payload.data as { id: string; name: string; code: string }[]) : []
+      setLeagues(rows)
+      if (!rows.length) {
         setLeaguesError('Brak lig w bazie. Dodaj je najpierw w panelu administracyjnym.')
       }
     } catch (err) {
       console.error('loadLeagues error', err)
       setLeagues([])
-      setLeaguesError('Nie udało się pobrać lig z Supabase.')
+      setLeaguesError('Nie udało się pobrać lig. Spróbuj ponownie.')
     } finally {
       setLeaguesLoading(false)
     }

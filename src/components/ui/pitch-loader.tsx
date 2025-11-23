@@ -50,8 +50,9 @@ export function LoaderOverlay({ show, message, fullScreen = true, className }: L
         className,
       )}
     >
-      <div className="relative">
+      <div className="relative flex flex-col items-center gap-4 text-center">
         <PitchLoader size={90} />
+        {message ? <p className="text-sm text-white/80 font-semibold tracking-wide">{message}</p> : null}
       </div>
     </div>
   )

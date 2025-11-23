@@ -23,8 +23,12 @@ import { useToast } from '@/hooks/use-toast';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { getSupabase } from '@/lib/supabaseClient';
 
+type RegisterSuccessPayload =
+  | { mode: 'prefill'; email?: string; password?: string; notice?: string }
+  | { mode: 'logged-in' }
+
 type RegisterFormProps = {
-  onSuccess?: (prefill?: { email?: string; password?: string; notice?: string }) => void;
+  onSuccess?: (payload?: RegisterSuccessPayload) => void;
 };
 
 export function RegisterForm({ onSuccess }: RegisterFormProps) {
@@ -75,12 +79,52 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
     </span>
   )
 
+  const ensureFreshSession = React.useCallback(async (supabaseClient: ReturnType<typeof getSupabase>) => {
+    try {
+      const {
+        data: { session },
+      } = await supabaseClient.auth.getSession()
+      if (!session) return
+      
+      // Clear all storage first
+      if (typeof window !== 'undefined') {
+        try {
+          window.localStorage.removeItem('sb_remember')
+          Object.keys(window.localStorage).forEach((key) => {
+            if (key.startsWith('sb-') || key.includes('supabase')) {
+              window.localStorage.removeItem(key)
+            }
+          })
+          Object.keys(window.sessionStorage).forEach((key) => {
+            if (key.startsWith('sb-') || key.includes('supabase')) {
+              window.sessionStorage.removeItem(key)
+            }
+          })
+        } catch {}
+      }
+      
+      // Sign out from Supabase
+      await supabaseClient.auth.signOut({ scope: 'global' } as any).catch(() => {})
+      
+      // Clear server cookies
+      await fetch('/api/auth/logout', { 
+        method: 'POST', 
+        credentials: 'include',
+        cache: 'no-store',
+      }).catch(() => {})
+      
+      // Wait a bit to ensure cleanup
+      await new Promise(resolve => setTimeout(resolve, 200))
+    } catch {}
+  }, [])
+
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
     try {
       const phone = (values.phone.startsWith('+') ? values.phone : `+${values.phone}`).replace(/[^\d+]/g, '')
 
       const supabase = getSupabase();
+      await ensureFreshSession(supabase)
 
       // Optional pre-check: email already used by any user (auth.users.email or metadata.contact_email)
       try {
@@ -88,7 +132,15 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
         if (!existsErr && exists === true) {
           const msg = 'Ten email jest połączony z Google — Zaloguj się przez Google'
           toast({ title: msg })
-          onSuccess?.({ email: values.email, notice: msg })
+          if (onSuccess) {
+            onSuccess({ mode: 'prefill', email: values.email, notice: msg })
+          } else {
+            try {
+              const params = new URLSearchParams({ email: values.email })
+              params.set('notice', msg)
+              router.push(`/login?${params.toString()}`)
+            } catch {}
+          }
           setIsLoading(false)
           return
         }
@@ -124,10 +176,23 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       // We have a session now; securely link email/password so it appears in Auth → Users
       if (pendingProfile) {
         try {
+          // First, save phone to profiles
+          try {
+            const { data: userData } = await supabase.auth.getUser()
+            if (userData?.user?.id) {
+              try {
+                await supabase.rpc('mark_phone_confirmed', { 
+                  p_user_id: userData.user.id, 
+                  p_phone: pendingPhone.replace(/[^\d+]/g, '') 
+                })
+              } catch {}
+            }
+          } catch {}
+          
           const resp = await fetch('/api/auth/link-email', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            credentials: 'same-origin',
+            credentials: 'include',
             body: JSON.stringify({
               email: pendingProfile.email,
               password: pendingProfile.password,
@@ -140,33 +205,53 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
             const j = await resp.json().catch(() => ({}))
             throw new Error(j?.error || 'Link email failed')
           }
-        } catch {}
+        } catch (linkErr: any) {
+          throw new Error(
+            typeof linkErr?.message === 'string'
+              ? linkErr.message
+              : 'Nie udało się powiązać e-maila z kontem. Spróbuj ponownie.',
+          )
+        }
       }
       toast({ title: 'Rejestracja pomyślna!', description: 'Logowanie…' })
       // Sync server cookies so /app server components and middleware see the session
       let ok = false
       try {
-        await fetch('/auth/callback', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ event: 'SIGNED_IN', session: data?.session }),
-        })
-        // Wait until the server sees the session to avoid redirecting to login
-        for (let i = 0; i < 20; i++) {
-          try {
-            const res = await fetch('/api/auth/ping', { credentials: 'include', cache: 'no-store' })
-            const j = await res.json().catch(() => ({}))
-            if (j?.ok) { ok = true; break }
-          } catch {}
-          await new Promise((r) => setTimeout(r, 100))
+        const supaSession = await supabase.auth.getSession()
+        const sessionPayload = supaSession.data.session ?? data?.session
+        if (sessionPayload) {
+          await fetch('/auth/callback', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ 
+              event: 'SIGNED_IN', 
+              session: {
+                access_token: sessionPayload.access_token,
+                refresh_token: sessionPayload.refresh_token,
+              }
+            }),
+          })
+          // Wait until the server sees the session to avoid redirecting to login
+          for (let i = 0; i < 20; i++) {
+            try {
+              const res = await fetch('/api/auth/ping', { credentials: 'include', cache: 'no-store' })
+              const j = await res.json().catch(() => ({}))
+              if (j?.ok) { ok = true; break }
+            } catch {}
+            await new Promise((r) => setTimeout(r, 100))
+          }
         }
-      } catch {}
+      } catch (err) {
+        console.error('Session sync error', err);
+      }
       if (!ok) {
         toast({ title: 'Problem z sesją', description: 'Spróbuj ponownie zalogować się.', variant: 'destructive' as any })
-        onSuccess?.({ email: pendingProfile?.email, password: pendingProfile?.password })
+        onSuccess?.({ mode: 'prefill', email: pendingProfile?.email, password: pendingProfile?.password })
         return
       }
+      // Notify parent that user is fully logged in
+      onSuccess?.({ mode: 'logged-in' })
       // Use hard redirect to guarantee cookies are applied before SSR guard runs
       try {
         if (typeof window !== 'undefined') {
@@ -177,7 +262,6 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       } catch {
         router.replace('/app')
       }
-      onSuccess?.({ email: pendingProfile?.email, password: pendingProfile?.password })
     } catch (err: any) {
       toast({ title: 'Nieprawidłowy kod.', description: err?.message ?? 'Invalid code', variant: 'destructive' as any })
     } finally {

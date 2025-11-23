@@ -1,4 +1,4 @@
--- RPC settle_quiz: перерахує відповіді, розподілить призи та закриє раунд
+-- Create settle_quiz RPC that scores submissions, distributes prizes, and locks the round.
 create or replace function public.settle_quiz(p_quiz uuid)
 returns jsonb
 language plpgsql
@@ -16,7 +16,8 @@ begin
   end if;
 
   if v_actor is not null then
-    select is_admin into v_is_admin
+    select is_admin
+      into v_is_admin
     from public.profiles
     where id = v_actor;
     if not coalesce(v_is_admin, false) then
@@ -177,7 +178,9 @@ begin
     from scored sc
   ),
   brackets as (
-    select correct_answers, sum(pool) as pool
+    select
+      correct_answers,
+      sum(pool) as pool
     from public.quiz_prize_brackets
     where quiz_id = p_quiz
     group by correct_answers
@@ -256,7 +259,9 @@ begin
 
   update public.rounds
   set status = 'settled'
-  where id = (select round_id from public.quizzes where id = p_quiz);
+  where id = (
+    select round_id from public.quizzes where id = p_quiz
+  );
 
   return jsonb_build_object(
     'quiz_id', p_quiz,
@@ -268,46 +273,99 @@ $$;
 
 grant execute on function public.settle_quiz(uuid) to authenticated, service_role;
 
--- RLS для quiz_submissions
-alter table public.quiz_submissions enable row level security;
+-- Enable row level security + policies for quiz_submissions.
+do $$
+begin
+  if to_regclass('public.quiz_submissions') is not null then
+    execute 'alter table public.quiz_submissions enable row level security';
 
-create policy if not exists quiz_submissions_user_select
-on public.quiz_submissions
-for select
-using (auth.uid() = user_id);
+    if not exists (
+      select 1 from pg_policies
+      where schemaname = 'public' and tablename = 'quiz_submissions' and policyname = 'quiz_submissions_user_select'
+    ) then
+      execute '
+        create policy quiz_submissions_user_select
+        on public.quiz_submissions
+        for select
+        using (auth.uid() = user_id)
+      ';
+    end if;
 
-create policy if not exists quiz_submissions_user_insert
-on public.quiz_submissions
-for insert
-with check (auth.uid() = user_id);
+    if not exists (
+      select 1 from pg_policies
+      where schemaname = 'public' and tablename = 'quiz_submissions' and policyname = 'quiz_submissions_user_insert'
+    ) then
+      execute '
+        create policy quiz_submissions_user_insert
+        on public.quiz_submissions
+        for insert
+        with check (auth.uid() = user_id)
+      ';
+    end if;
 
-create policy if not exists quiz_submissions_user_update
-on public.quiz_submissions
-for update
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
+    if not exists (
+      select 1 from pg_policies
+      where schemaname = 'public' and tablename = 'quiz_submissions' and policyname = 'quiz_submissions_user_update'
+    ) then
+      execute '
+        create policy quiz_submissions_user_update
+        on public.quiz_submissions
+        for update
+        using (auth.uid() = user_id)
+        with check (auth.uid() = user_id)
+      ';
+    end if;
+  end if;
+end
+$$;
 
--- RLS для quiz_answers
-alter table public.quiz_answers enable row level security;
+-- Enable row level security + policies for quiz_answers.
+do $$
+begin
+  if to_regclass('public.quiz_answers') is not null then
+    execute 'alter table public.quiz_answers enable row level security';
 
-create policy if not exists quiz_answers_user_manage
-on public.quiz_answers
-for all
-using (
-  submission_id in (
-    select id from public.quiz_submissions where user_id = auth.uid()
-  )
-)
-with check (
-  submission_id in (
-    select id from public.quiz_submissions where user_id = auth.uid()
-  )
-);
+    if not exists (
+      select 1 from pg_policies
+      where schemaname = 'public' and tablename = 'quiz_answers' and policyname = 'quiz_answers_user_manage'
+    ) then
+      execute '
+        create policy quiz_answers_user_manage
+        on public.quiz_answers
+        for all
+        using (
+          submission_id in (
+            select id from public.quiz_submissions where user_id = auth.uid()
+          )
+        )
+        with check (
+          submission_id in (
+            select id from public.quiz_submissions where user_id = auth.uid()
+          )
+        )
+      ';
+    end if;
+  end if;
+end
+$$;
 
--- RLS для quiz_results (read-only для гравців)
-alter table public.quiz_results enable row level security;
+-- Enable row level security + policies for quiz_results (read-only for players).
+do $$
+begin
+  if to_regclass('public.quiz_results') is not null then
+    execute 'alter table public.quiz_results enable row level security';
 
-create policy if not exists quiz_results_user_select
-on public.quiz_results
-for select
-using (auth.uid() = user_id);
+    if not exists (
+      select 1 from pg_policies
+      where schemaname = 'public' and tablename = 'quiz_results' and policyname = 'quiz_results_user_select'
+    ) then
+      execute '
+        create policy quiz_results_user_select
+        on public.quiz_results
+        for select
+        using (auth.uid() = user_id)
+      ';
+    end if;
+  end if;
+end
+$$;

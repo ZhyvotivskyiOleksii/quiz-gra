@@ -1,34 +1,42 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { RegisterForm } from "@/components/auth/register-form";
-import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import Link from 'next/link'
+import { AuthPageShell } from '@/components/auth/auth-page-shell'
+import { RegisterForm } from '@/components/auth/register-form'
+import { cookies } from 'next/headers'
+import { createServerClient } from '@supabase/ssr'
+import { redirect } from 'next/navigation'
 
 export default async function RegisterPage() {
-  // Server-side: if already authenticated, go to app
-  const cookieStore = await cookies();
+  const cookieStore = await cookies()
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll: () => cookieStore.getAll().map(c => ({ name: c.name, value: c.value })),
-      } as any,
-    }
-  );
-  const { data: { session } } = await supabase.auth.getSession();
-  if (session) redirect('/app');
+        get: (name: string) => cookieStore.get(name)?.value,
+        set: () => {},
+        remove: () => {},
+      },
+    },
+  )
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
 
   return (
-    <div className="container max-w-xl mx-auto px-10 py-8 sm:py-12">
-      <Card className="shadow-xl">
-        <CardHeader>
-          <CardTitle className="text-2xl font-extrabold uppercase">Rejestracja</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <RegisterForm />
-        </CardContent>
-      </Card>
-    </div>
-  );
+    <AuthPageShell
+      title="Załóż konto"
+      subtitle="Potwierdź telefon, aby zawsze mieć dostęp do swoich quizów."
+      footer={
+        <span>
+          Masz już konto?{' '}
+          <Link href="/login" className="font-semibold text-white hover:text-white/90 underline-offset-4 hover:underline">
+            Zaloguj się
+          </Link>
+        </span>
+      }
+    >
+      <RegisterForm />
+    </AuthPageShell>
+  )
 }

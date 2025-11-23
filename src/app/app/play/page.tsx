@@ -23,12 +23,12 @@ export default async function PlayPage() {
   } = await supabase.auth.getUser()
 
   if (!user) {
-    redirect('/?auth=login')
+    redirect('/login')
   }
 
   const { data: rounds } = await supabase
     .from('rounds')
-    .select('id,label,deadline_at,leagues(name,code),matches(kickoff_at),quizzes(*)')
+    .select('id,label,deadline_at,leagues(name,code),matches(id,kickoff_at,status,result_home,result_away),quizzes(*)')
     .neq('status','draft')
     .order('deadline_at',{ ascending: true })
     .limit(8)
@@ -104,16 +104,12 @@ export default async function PlayPage() {
     })
   }
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('phone, phone_confirmed_at')
-    .eq('id', user.id)
-    .maybeSingle()
+  // Phone info - check from user metadata (phone fields might not be accessible due to RLS)
+  // Don't query phone fields from profiles table to avoid 400 errors
   const hasPhone =
-    Boolean(profile?.phone) ||
     Boolean((user as any).phone) ||
     Boolean((user.user_metadata as any)?.phone)
-  const phoneConfirmed = Boolean(profile?.phone_confirmed_at) || Boolean((user as any).phone_confirmed_at)
+  const phoneConfirmed = Boolean((user as any).phone_confirmed_at) || Boolean((user.user_metadata as any)?.phone_confirmed_at)
   const needsPhoneGate = !(hasPhone && phoneConfirmed)
 
   return (
@@ -158,9 +154,17 @@ export default async function PlayPage() {
                 : []
               const earliestKickoff = matchKickoffs.length ? Math.min(...matchKickoffs) : null
               const now = Date.now()
-              const isClosed = Number.isFinite(deadlineTs) ? deadlineTs <= now : false
-              const hasSubmission = q.id ? Boolean(submissionMap[q.id]) : false
               const kickoffSource = Number.isFinite(earliestKickoff ?? NaN) ? earliestKickoff! : deadlineTs
+              const matchFinished = Array.isArray(r.matches)
+                ? r.matches.some((m: any) => (m?.status || '').toLowerCase() === 'finished')
+                : false
+              const matchStarted = matchFinished
+                ? true
+                : Number.isFinite(earliestKickoff ?? NaN)
+                  ? earliestKickoff! <= now
+                  : false
+              const isClosed = matchFinished || (Number.isFinite(deadlineTs) ? deadlineTs <= now : false)
+              const hasSubmission = q.id ? Boolean(submissionMap[q.id]) : false
               const kickoffLabel = Number.isFinite(kickoffSource)
                 ? new Date(kickoffSource).toLocaleString('pl-PL', {
                     month: 'short',
@@ -169,6 +173,59 @@ export default async function PlayPage() {
                     minute: '2-digit',
                   })
                 : '—'
+              const startCountdown =
+                !matchStarted && Number.isFinite(kickoffSource)
+                  ? formatTimeLeft(new Date(kickoffSource).toISOString())
+                  : null
+              const fallbackDeadlineCountdown = !Number.isFinite(kickoffSource)
+                ? formatTimeLeft(r.deadline_at)
+                : null
+              // Улучшенная логика статусов квизов
+              let chipText = '—'
+              if (matchFinished) {
+                chipText = 'Mecz zakończony'
+              } else if (matchStarted) {
+                chipText = 'Mecz trwa'
+              } else if (Number.isFinite(kickoffSource)) {
+                const timeLeft = startCountdown
+                if (timeLeft) {
+                  chipText = `Start za: ${timeLeft}`
+                } else {
+                  const kickoffTime = new Date(kickoffSource).getTime()
+                  const now = Date.now()
+                  if (kickoffTime <= now) {
+                    chipText = 'Mecz trwa'
+                  } else {
+                    chipText = 'Mecz wkrótce'
+                  }
+                }
+              } else if (fallbackDeadlineCountdown) {
+                chipText = `Koniec za: ${fallbackDeadlineCountdown}`
+              } else if (r.deadline_at) {
+                try {
+                  const deadlineTime = new Date(r.deadline_at).getTime()
+                  const now = Date.now()
+                  if (deadlineTime > now) {
+                    const diff = deadlineTime - now
+                    const hours = Math.floor(diff / (1000 * 60 * 60))
+                    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
+                    if (hours > 24) {
+                      const days = Math.floor(hours / 24)
+                      chipText = `Dostępne jeszcze ${days}d`
+                    } else if (hours > 0) {
+                      chipText = `Dostępne jeszcze ${hours}h ${minutes}m`
+                    } else if (minutes > 0) {
+                      chipText = `Dostępne jeszcze ${minutes}m`
+                    } else {
+                      chipText = 'Wkrótce zamknięte'
+                    }
+                  } else {
+                    chipText = 'Zamknięte'
+                  }
+                } catch {
+                  chipText = '—'
+                }
+              }
               const actionLabel = isClosed
                 ? 'Zamknięte'
                 : hasSubmission
@@ -181,7 +238,7 @@ export default async function PlayPage() {
                       <Image src={img} alt="Quiz" fill className="object-cover scale-105 sm:scale-100" />
                       {/* chip */}
                       <div className="absolute top-3 left-3 rounded-full bg-black/70 backdrop-blur-sm text-white text-[11px] px-2 py-1 flex items-center gap-1">
-                        <Timer className="h-3.5 w-3.5" /> Koniec za: {formatTimeLeft(r.deadline_at) || '—'}
+                        <Timer className="h-3.5 w-3.5" /> {chipText}
                       </div>
                       <div className="pointer-events-none absolute inset-y-0 right-0 w-40 bg-gradient-to-r from-transparent to-[#7a1313] opacity-95"/>
                     </div>

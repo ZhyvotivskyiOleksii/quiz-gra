@@ -10,6 +10,10 @@ export async function GET() {
     {
       cookies: {
         get: (name: string) => cookieStore.get(name)?.value,
+        set: () => {},
+        remove: () => {},
+        getAll: () => cookieStore.getAll().map((c) => ({ name: c.name, value: c.value })),
+        setAll: () => {},
       },
     }
   )

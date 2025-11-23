@@ -18,7 +18,7 @@ export default async function AdminQuizzesPage() {
 
   const { data } = await supabase
     .from('rounds')
-    .select('id,label,status,deadline_at,leagues(name,code),quizzes(*)')
+    .select('id,label,status,deadline_at,leagues(name,code),matches(id,kickoff_at,status,result_home,result_away),quizzes(*)')
     .order('deadline_at', { ascending: false })
     .limit(50)
 

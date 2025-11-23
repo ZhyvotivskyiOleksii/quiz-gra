@@ -20,6 +20,14 @@ export default function Home() {
   const router = useRouter()
   const [isAuthed, setIsAuthed] = React.useState(false)
 
+  const openLogin = React.useCallback(() => {
+    try {
+      router.push('/login')
+    } catch {
+      if (typeof window !== 'undefined') window.location.href = '/login'
+    }
+  }, [router])
+
   React.useEffect(() => {
     ;(async () => {
       try {
@@ -54,7 +62,7 @@ export default function Home() {
         <div className="relative z-10 w-full max-w-[1440px] mx-auto px-4 sm:px-5 md:px-6 lg:px-8 xl:px-12 2xl:px-16 pt-4 sm:pt-5 md:pt-6 lg:pt-8 pb-6 sm:pb-8 md:pb-10 lg:pb-14">
           {/* Баннеры */}
           <div className="max-[360px]:hidden mb-3 sm:mb-4 md:mb-5 lg:mb-6">
-            <HeroBanners />
+            <HeroBanners onCta={openLogin} />
           </div>
 
           {/* Основной контент - резиновая сетка */}
@@ -93,7 +101,7 @@ export default function Home() {
                     size="lg"
                     className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg hover:shadow-primary/25 text-sm md:text-base h-11 md:h-12 px-6 md:px-8"
                   >
-                    <Link href="/?auth=register">Zacznij grać</Link>
+                    <Link href="/login">Zacznij grać</Link>
                   </Button>
                 )}
               </div>
@@ -130,7 +138,7 @@ export default function Home() {
                       size="lg"
                       className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg hover:shadow-primary/25 text-sm sm:text-base h-10 sm:h-11 md:h-12 px-10 sm:px-12 md:px-14 min-w-[260px] sm:min-w-[280px]"
                     >
-                      <Link href="/?auth=register">Zacznij grać</Link>
+                      <Link href="/login">Zacznij grać</Link>
                     </Button>
                   </div>
                 )}
@@ -192,7 +200,7 @@ export default function Home() {
 }
 
 // HeroBanners component kept in this file for simplicity
-function HeroBanners() {
+function HeroBanners({ onCta }: { onCta: () => void }) {
   const [api, setApi] = React.useState<CarouselApi | null>(null)
 
   React.useEffect(() => {
@@ -265,8 +273,13 @@ function HeroBanners() {
                     <p className="text-white/85 text-[11px] sm:text-xs md:text-sm mt-1 drop-shadow-sm line-clamp-2">{subtitle}</p>
                   </div>
                   <div className="shrink-0 self-end">
-                    <Button asChild size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90 text-[11px] sm:text-xs h-7 sm:h-8 px-3 sm:px-4 whitespace-nowrap">
-                      <Link href="/?auth=register">Zagraj teraz</Link>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="bg-primary text-primary-foreground hover:bg-primary/90 text-[11px] sm:text-xs h-7 sm:h-8 px-3 sm:px-4 whitespace-nowrap"
+                      onClick={onCta}
+                    >
+                      Zagraj teraz
                     </Button>
                   </div>
                 </div>
@@ -280,3 +293,4 @@ function HeroBanners() {
     </Carousel>
   )
 }
+

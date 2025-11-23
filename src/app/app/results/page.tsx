@@ -35,7 +35,7 @@ export default async function ResultsPage() {
   const {
     data: { session },
   } = await supabase.auth.getSession()
-  if (!session) redirect('/?auth=login')
+  if (!session) redirect('/login')
 
   const { data: submissionsResp } = await supabase
     .from('quiz_submissions')

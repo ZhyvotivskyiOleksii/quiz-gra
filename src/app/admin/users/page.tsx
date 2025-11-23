@@ -47,7 +47,7 @@ export default async function AdminUsersPage() {
   const {
     data: { session },
   } = await supabase.auth.getSession()
-  if (!session) redirect('/?auth=login')
+  if (!session) redirect('/login')
 
   const weekAgoIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
   const monthAgoIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()

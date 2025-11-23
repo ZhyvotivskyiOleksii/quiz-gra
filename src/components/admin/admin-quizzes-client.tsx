@@ -7,6 +7,24 @@ import { getSupabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
 import { Plus, RefreshCcw, Settings2, Timer, Trash2 } from 'lucide-react'
 
+function formatTimeLeft(deadline?: string | null) {
+  if (!deadline) return null
+  try {
+    const diff = new Date(deadline).getTime() - Date.now()
+    if (diff <= 0) return null
+    const minutes = Math.floor(diff / 60000)
+    if (minutes <= 0) return null
+    const days = Math.floor(minutes / (60 * 24))
+    const hours = Math.floor((minutes % (60 * 24)) / 60)
+    const mins = minutes % 60
+    if (days > 0) return `${days}d ${hours}h ${mins}m`
+    if (hours > 0) return `${hours}h ${mins}m`
+    return `${mins}m`
+  } catch {
+    return null
+  }
+}
+
 export function AdminQuizzesClient({ initialItems }: { initialItems: any[] }) {
   const [items, setItems] = React.useState<any[]>(initialItems)
   const [loading, setLoading] = React.useState(false)
@@ -20,7 +38,7 @@ export function AdminQuizzesClient({ initialItems }: { initialItems: any[] }) {
       const s = getSupabase()
       const { data, error: queryError } = await s
         .from('rounds')
-        .select('id,label,status,deadline_at,leagues(name,code),quizzes(*)')
+        .select('id,label,status,deadline_at,leagues(name,code),matches(id,kickoff_at,status,result_home,result_away),quizzes(*)')
         .order('deadline_at', { ascending: false })
         .limit(50)
       if (queryError) throw queryError
@@ -83,6 +101,63 @@ export function AdminQuizzesClient({ initialItems }: { initialItems: any[] }) {
           const q = r.quizzes?.[0] || {}
           const img = q.image_url || '/images/preview.webp'
           const prize = q.prize
+          const matches = Array.isArray(r.matches) ? r.matches : []
+          const matchKickoffs = matches
+            .map(
+              (m: any) =>
+                m?.kickoff_at && Number.isFinite(new Date(m.kickoff_at).getTime())
+                  ? new Date(m.kickoff_at).getTime()
+                  : NaN,
+            )
+            .filter((ts): ts is number => typeof ts === 'number' && Number.isFinite(ts))
+          const earliestKickoff = matchKickoffs.length ? Math.min(...matchKickoffs) : null
+          const deadlineTs = r.deadline_at ? new Date(r.deadline_at).getTime() : NaN
+          const now = Date.now()
+          
+          // Check match statuses more accurately
+          const matchStatuses = matches.map((m: any) => (m?.status || '').toLowerCase())
+          // Check if matches have results (result_home and result_away are set) - indicates finished
+          const matchesWithResults = matches.filter((m: any) => 
+            (typeof m?.result_home === 'number' || m?.result_home !== null) &&
+            (typeof m?.result_away === 'number' || m?.result_away !== null)
+          )
+          const allMatchesHaveResults = matches.length > 0 && matches.length === matchesWithResults.length
+          
+          const allMatchesFinished = matches.length > 0 && (
+            matchStatuses.every((s: string) => s === 'finished') || 
+            allMatchesHaveResults
+          )
+          const someMatchesFinished = matchStatuses.some((s: string) => s === 'finished') || matchesWithResults.length > 0
+          const someMatchesInProgress = matchStatuses.some((s: string) => s === 'in_progress' || s === 'live' || s === 'playing')
+          
+          // Determine match state
+          const matchFinished = allMatchesFinished
+          const matchStarted = matchFinished || someMatchesInProgress || (Number.isFinite(earliestKickoff ?? NaN) && earliestKickoff! <= now)
+          
+          const kickoffSource = Number.isFinite(earliestKickoff ?? NaN) ? earliestKickoff! : deadlineTs
+          const countdown =
+            !matchFinished && !matchStarted && Number.isFinite(kickoffSource)
+              ? formatTimeLeft(new Date(kickoffSource).toISOString())
+              : null
+          
+          // Determine what to display
+          let chipText = '—'
+          if (matchFinished) {
+            chipText = 'Mecz zakończony'
+          } else if (matchStarted) {
+            chipText = 'Mecz trwa'
+          } else if (countdown) {
+            chipText = `Start za: ${countdown}`
+          } else if (Number.isFinite(deadlineTs) && deadlineTs > now) {
+            const timeLeft = formatTimeLeft(r.deadline_at)
+            if (timeLeft) {
+              chipText = `Dostępne jeszcze ${timeLeft}`
+            } else {
+              chipText = `Deadline: ${new Date(r.deadline_at).toLocaleString('pl-PL')}`
+            }
+          } else if (r.deadline_at) {
+            chipText = `Deadline: ${new Date(r.deadline_at).toLocaleString('pl-PL')}`
+          }
           return (
             <div
               key={r.id}
@@ -92,11 +167,9 @@ export function AdminQuizzesClient({ initialItems }: { initialItems: any[] }) {
                 <div className="relative w-[55%] min-h-[170px] overflow-hidden rounded-r-[40px] md:min-h-[210px]">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={img} alt="Quiz" className="absolute inset-0 h-full w-full object-cover" />
-                  {r.deadline_at && (
-                    <div className="absolute left-3 top-3 flex items-center gap-1 rounded-full bg-black/70 px-2 py-1 text-[11px] text-white backdrop-blur-sm">
-                      <Timer className="h-3.5 w-3.5" /> Do końca: {new Date(r.deadline_at).toLocaleString('pl-PL')}
-                    </div>
-                  )}
+                  <div className="absolute left-3 top-3 flex items-center gap-1 rounded-full bg-black/70 px-2 py-1 text-[11px] text-white backdrop-blur-sm">
+                    <Timer className="h-3.5 w-3.5" /> {chipText}
+                  </div>
                   <div className="pointer-events-none absolute inset-y-0 right-0 w-40 bg-gradient-to-r from-transparent to-[#7a1313] opacity-95" />
                 </div>
                 <div className="relative flex flex-1 flex-col items-end justify-center p-5 text-right sm:p-6">

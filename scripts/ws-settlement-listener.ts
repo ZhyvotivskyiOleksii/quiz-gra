@@ -3,6 +3,7 @@ import WebSocket from 'ws'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { FUTURE_KINDS } from '@/lib/settleFutureQuestions'
 import { autoSettle } from '@/lib/autoSettle'
+import { fetchMatchDetails, type ScoreBusterStatusCategory } from '@/lib/footballApi'
 
 const WS_URL = process.env.SCORE_WS_URL || 'wss://gateway.score-buster.test.royal-gambit.io/ws/events'
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -108,7 +109,12 @@ async function handleMessage(raw: WebSocket.RawData) {
   const statusId = typeof statusRaw === 'string' ? parseInt(statusRaw, 10) : Number(statusRaw)
   if (!FINISHED_STATUS_IDS.has(statusId)) return
 
-  console.log(`[ws-settlement] Event ${eventId} finished (status ${statusId}). Settling quizzes...`)
+  const match = activeMatches.get(eventId)
+  const matchId = match?.matchId
+  if (!matchId) return
+
+  console.log(`[ws-settlement] Event ${eventId} finished (status ${statusId}). Syncing match + settling quizzes...`)
+  await syncMatchResult(matchId, eventId)
   try {
     const summary = await autoSettle({
       supabase: serviceClient,
@@ -192,4 +198,33 @@ function getWsBufferMinutes() {
   const parsed = Number(raw)
   if (Number.isFinite(parsed)) return parsed
   return 0
+}
+
+function mapStatusToDb(category: ScoreBusterStatusCategory): string {
+  switch (category) {
+    case 'finished':
+      return 'finished'
+    case 'in_progress':
+      return 'live'
+    case 'cancelled':
+    case 'deleted':
+      return 'cancelled'
+    default:
+      return 'scheduled'
+  }
+}
+
+async function syncMatchResult(matchId: string, eventId: number) {
+  try {
+    const details = await fetchMatchDetails(String(eventId))
+    if (!details) return
+    const update: Record<string, any> = {
+      status: mapStatusToDb(details.statusCategory),
+    }
+    if (details.score.home !== null) update.result_home = details.score.home
+    if (details.score.away !== null) update.result_away = details.score.away
+    await serviceClient.from('matches').update(update).eq('id', matchId)
+  } catch (err) {
+    console.error('[ws-settlement] Failed to sync match result', { matchId, eventId }, err)
+  }
 }

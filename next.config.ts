@@ -5,14 +5,11 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
   async redirects() {
     // Keep empty to avoid accidental cycles during debugging
     return []
   },
-  // No rewrites for /login or /register — real pages exist
+  // No special rewrites; marketing routes handled via modal
   images: {
     remotePatterns: [
       {

@@ -15,9 +15,16 @@ export function ConditionalChrome({ children }: { children: React.ReactNode }) {
   const isAppArea = React.useMemo(() => {
     if (!pathname) return false
     // direct paths
-    if (pathname.startsWith('/app') || pathname.startsWith('/admin')) return true
+    if (
+      pathname.startsWith('/app') ||
+      pathname.startsWith('/admin') ||
+      pathname.startsWith('/login') ||
+      pathname.startsWith('/register')
+    ) {
+      return true
+    }
     // i18n prefix e.g. /pl/app, /en/admin
-    return /^\/[a-zA-Z]{2}(?:-[A-Z]{2})?\/(app|admin)(?:\/|$)/.test(pathname)
+    return /^\/[a-zA-Z]{2}(?:-[A-Z]{2})?\/(app|admin|login|register)(?:\/|$)/.test(pathname)
   }, [pathname])
 
   // Avoid SSR/header flicker on app/admin routes: don't render header/footer

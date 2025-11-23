@@ -38,7 +38,7 @@ export default async function HistoryPage() {
     }
   )
   const { data: { session } } = await supabase.auth.getSession()
-  if (!session) redirect('/?auth=login')
+  if (!session) redirect('/login')
 
   const { data: submissions = [] } = await supabase
     .from('quiz_submissions')

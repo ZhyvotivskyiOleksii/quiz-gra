@@ -32,12 +32,22 @@ export async function POST(req: NextRequest) {
   const { data: userRes } = await rsc.auth.getUser()
   const me = (userRes as any)?.user
   if (!me?.id) return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
+  
+  // Get phone from session or user metadata
+  const { data: sessionData } = await rsc.auth.getSession()
+  const phoneFromSession = sessionData?.session?.user?.phone || me.phone || (me.user_metadata?.phone as string | undefined)
 
-  // Optional: quick pre-check – email already belongs to someone else
+  // Critical: check if email already belongs to a different user
+  // This prevents overwriting another user's data
   try {
     const { data: exists } = await rsc.rpc('email_exists', { p_email: email.toLowerCase() })
-    if (exists === true && me.email?.toLowerCase() !== email.toLowerCase()) {
-      return NextResponse.json({ ok: false, error: 'email_in_use' }, { status: 409 })
+    if (exists === true) {
+      // Check if this email belongs to the current user
+      const currentEmail = me.email?.toLowerCase() || (me.user_metadata?.email as string | undefined)?.toLowerCase() || (me.user_metadata?.contact_email as string | undefined)?.toLowerCase()
+      if (currentEmail !== email.toLowerCase()) {
+        // Email belongs to a different user - reject
+        return NextResponse.json({ ok: false, error: 'email_in_use' }, { status: 409 })
+      }
     }
   } catch {}
 
@@ -59,13 +69,20 @@ export async function POST(req: NextRequest) {
     })
     if (updErr) return NextResponse.json({ ok: false, error: updErr.message }, { status: 400 })
 
-    // Keep profiles row in sync
+    // Keep profiles row in sync - only update for current user, never overwrite other users
     try {
+      const displayName = `${(firstName||'').trim()} ${(lastName||'').trim()}`.trim() || null
       await admin.from('profiles').upsert({
         id: me.id,
         email,
-        display_name: `${(firstName||'').trim()} ${(lastName||'').trim()}`.trim() || null,
-      } as any, { onConflict: 'id' } as any)
+        display_name: displayName,
+        // Also save phone if it exists
+        phone: phoneFromSession || null,
+      } as any, { 
+        onConflict: 'id',
+        // Only update if the row belongs to current user
+        ignoreDuplicates: false
+      } as any)
     } catch {}
 
     return NextResponse.json({ ok: true, method: 'admin' })
@@ -90,8 +107,20 @@ export async function POST(req: NextRequest) {
     if (upd2) return NextResponse.json({ ok: false, error: upd2.message }, { status: 400 })
   }
 
+  // Only update profiles for current user
   try {
-    await rsc.from('profiles').upsert({ id: me.id, email, display_name: `${(firstName||'').trim()} ${(lastName||'').trim()}`.trim() || null } as any, { onConflict: 'id' } as any)
+    const displayName = `${(firstName||'').trim()} ${(lastName||'').trim()}`.trim() || null
+    await rsc.from('profiles').upsert({ 
+      id: me.id, 
+      email, 
+      display_name: displayName,
+      // Also save phone if it exists
+      phone: phoneFromSession || null,
+    } as any, { 
+      onConflict: 'id',
+      // Ensure we only update the row that belongs to current user
+      ignoreDuplicates: false
+    } as any)
   } catch {}
 
   return NextResponse.json({ ok: true, method: 'user_update' })
