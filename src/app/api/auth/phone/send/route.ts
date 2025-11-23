@@ -48,40 +48,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
   }
 
-  // Use the same logic as login - signInWithOtp with shouldCreateUser: true
-  // This works even for existing users - Supabase will send SMS if phone matches
-  const { error: otpError } = await supabase.auth.signInWithOtp({
-    phone,
-    options: { 
-      shouldCreateUser: true, // Same as login - allows sending OTP
-      channel: 'sms' as any 
-    },
-  })
-
-  // If OTP send fails, check if it's a recoverable error
-  // "Signups not allowed" error often appears but SMS is still sent
-  if (otpError) {
-    const errorMsg = otpError.message || ''
-    // These errors often mean SMS was sent anyway
-    if (
-      errorMsg.includes('signups not allowed') ||
-      errorMsg.includes('already') || 
-      errorMsg.includes('rate limit') || 
-      errorMsg.includes('too many')
-    ) {
-      // SMS was likely sent despite the error, continue
-      // Update phone on user account
-      await supabase.auth.updateUser({ phone }).catch(() => {})
-    } else {
-      return NextResponse.json({ ok: false, error: otpError.message }, { status: 400 })
-    }
-  } else {
-    // OTP sent successfully, update phone on user account
-    await supabase.auth.updateUser({ phone }).catch(() => {})
+  // Ask Supabase to send confirmation SMS for the current user
+  const { error: updateError } = await supabase.auth.updateUser({ phone })
+  if (updateError) {
+    return NextResponse.json({ ok: false, error: updateError.message || 'Nie udało się wysłać kodu.' }, { status: 400 })
   }
 
-  // Mark phone as pending in profiles
-  await supabase.rpc('signal_phone_pending', { p_user_id: user.id }).catch(() => {})
+  const { error: pendingError } = await supabase.rpc('signal_phone_pending', { p_user_id: user.id })
+  if (pendingError) {
+    console.warn('signal_phone_pending failed', pendingError)
+  }
 
   return NextResponse.json({ ok: true })
 }

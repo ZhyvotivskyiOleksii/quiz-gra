@@ -15,7 +15,7 @@ import { User, Phone, Lock, Hand, HelpCircle, BadgeCheck, AlertTriangle } from '
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import Image from 'next/image'
-import { emitAuthEvent } from '@/lib/auth-events'
+import { emitAuthEvent, subscribeToAuthEvents } from '@/lib/auth-events'
 
 export default function SettingsPage() {
   return (
@@ -99,8 +99,14 @@ function SettingsContent() {
     const { data: sub } = supabase.auth.onAuthStateChange(() => {
       syncProfileFromAuth()
     })
+    const unsubscribe = subscribeToAuthEvents((event) => {
+      if (event.type === 'profile:update' || event.type === 'session:refresh') {
+        syncProfileFromAuth()
+      }
+    })
     return () => {
       sub?.subscription?.unsubscribe()
+      unsubscribe?.()
     }
   }, [syncProfileFromAuth])
 

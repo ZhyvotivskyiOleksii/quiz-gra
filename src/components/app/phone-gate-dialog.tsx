@@ -72,46 +72,14 @@ export function PhoneGateDialog({ open, onOpenChange, onVerified }: PhoneGateDia
         body: JSON.stringify({ phone: norm }),
       })
       const payload = await res.json().catch(() => ({}))
-      
-      if (!res.ok) {
-        const errorMsg = payload?.error || 'Nie udało się wysłać kodu.'
-        // Check if error is recoverable (SMS might have been sent anyway)
-        // "Signups not allowed" often appears but SMS is still sent
-        if (
-          errorMsg.includes('signups not allowed') ||
-          errorMsg.includes('already') ||
-          errorMsg.includes('rate limit') ||
-          errorMsg.includes('too many') ||
-          res.status === 500
-        ) {
-          // SMS was likely sent despite the error, continue to code step
-          setTargetPhone(norm)
-          setStep('code')
-          toast({ title: 'Wysłaliśmy kod SMS.' })
-          setLoading(false)
-          return
-        }
-        throw new Error(errorMsg)
+      if (!res.ok || payload?.ok === false) {
+        throw new Error(payload?.error || 'Nie udało się wysłać kodu.')
       }
-      
       setTargetPhone(norm)
       setStep('code')
       toast({ title: 'Wysłaliśmy kod SMS.' })
     } catch (e: any) {
-      const errorMsg = e?.message || 'Nie udało się wysłać kodu.'
-      // Check if error is recoverable
-      if (
-        errorMsg.includes('already') ||
-        errorMsg.includes('rate limit') ||
-        errorMsg.includes('too many')
-      ) {
-        // SMS was likely sent, continue to code step
-        setTargetPhone(norm)
-        setStep('code')
-        toast({ title: 'Wysłaliśmy kod SMS.' })
-      } else {
-        setError(errorMsg)
-      }
+      setError(e?.message || 'Nie udało się wysłać kodu.')
     } finally {
       setLoading(false)
     }
@@ -135,8 +103,14 @@ export function PhoneGateDialog({ open, onOpenChange, onVerified }: PhoneGateDia
       const payload = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(payload?.error || 'Nieprawidłowy kod SMS.')
       emitAuthEvent({ type: 'profile:update' })
+      emitAuthEvent({ type: 'session:refresh' })
       toast({ title: 'Numer zweryfikowany' })
       onVerified?.()
+      onOpenChange(false)
+      setStep('phone')
+      setCode('')
+      setTargetPhone(null)
+      setPhone(norm)
     } catch (e: any) {
       setError(e?.message || 'Nieprawidłowy kod SMS.')
     } finally {

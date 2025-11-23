@@ -62,7 +62,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: verifyError.message }, { status: 400 })
   }
 
-  await supabase.rpc('mark_phone_confirmed', { p_user_id: user.id, p_phone: phone }).catch(() => {})
+  const { error: confirmError } = await supabase.rpc('mark_phone_confirmed', { p_user_id: user.id, p_phone: phone })
+  if (confirmError) {
+    console.warn('mark_phone_confirmed failed', confirmError)
+  }
 
   return NextResponse.json({ ok: true })
 }
