@@ -29,8 +29,13 @@ export function SettlementsClient({ initialRows }: SettlementsClientProps) {
   const [rows, setRows] = React.useState<SettlementRow[]>(initialRows)
   const [settling, setSettling] = React.useState(false)
   const [loading, setLoading] = React.useState(false)
+  const [hydrated, setHydrated] = React.useState(false)
   const { toast } = useToast()
   const router = useRouter()
+
+  React.useEffect(() => {
+    setHydrated(true)
+  }, [])
 
   const loadSettlements = React.useCallback(async () => {
     setLoading(true)
@@ -43,7 +48,19 @@ export function SettlementsClient({ initialRows }: SettlementsClientProps) {
         .limit(40)
 
       if (error) {
+        const missingTable =
+          (typeof error.code === 'string' && error.code === 'PGRST205') ||
+          (typeof error.message === 'string' && error.message.includes('quiz_results'))
+        if (missingTable) {
+          setRows([])
+          return
+        }
         console.error('Failed to load settlements', error)
+        toast({
+          title: 'Nie udało się pobrać rozliczeń',
+          description: 'Spróbuj ponownie za chwilę.',
+          variant: 'destructive',
+        })
         return
       }
 
@@ -178,7 +195,9 @@ export function SettlementsClient({ initialRows }: SettlementsClientProps) {
                 const status = (row.status || 'pending').toLowerCase()
                 const prize = typeof row.prize_awarded === 'number' ? `${row.prize_awarded.toFixed(2)} zł` : '—'
                 const updated = row.submitted_at
-                  ? formatDistanceToNow(new Date(row.submitted_at), { addSuffix: true, locale: pl })
+                  ? hydrated
+                    ? formatDistanceToNow(new Date(row.submitted_at), { addSuffix: true, locale: pl })
+                    : '—'
                   : '—'
                 const badgeColor =
                   status === 'won'
@@ -210,4 +229,3 @@ export function SettlementsClient({ initialRows }: SettlementsClientProps) {
     </div>
   )
 }
-

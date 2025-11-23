@@ -1,7 +1,6 @@
 import Image from 'next/image'
-import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { createServerClient } from '@supabase/ssr'
+import { createServerSupabaseClient } from '@/lib/createServerSupabase'
 import { Card } from '@/components/ui/card'
 import { ResultsAccordion } from '@/components/results/results-accordion'
 
@@ -21,16 +20,7 @@ type SubmissionSummary = {
 }
 
 export default async function ResultsPage() {
-  const cookieStore = await cookies()
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll: () => cookieStore.getAll().map((c) => ({ name: c.name, value: c.value })),
-      } as any,
-    },
-  )
+  const supabase = await createServerSupabaseClient()
 
   const {
     data: { session },

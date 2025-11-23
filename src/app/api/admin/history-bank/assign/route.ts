@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
+import { createServerSupabaseClient } from '@/lib/createServerSupabase'
 import { buildHistoryQuestionFromEntry, type HistoryBankEntry, type GeneratedHistoryQuestion } from '@/lib/historyBank'
 
 export async function POST(req: NextRequest) {
@@ -13,24 +12,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'missing_quiz_id' }, { status: 400 })
   }
 
-  const cookieStore = await cookies()
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  if (!url || !anon) {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
     return NextResponse.json({ ok: false, error: 'supabase_not_configured' }, { status: 500 })
   }
 
-  const supabase = createServerClient(url, anon, {
-    cookies: {
-      get: (name: string) => cookieStore.get(name)?.value,
-      set: (name: string, value: string, options: any) => {
-        try { cookieStore.set({ name, value, ...options }) } catch {}
-      },
-      remove: (name: string, options: any) => {
-        try { cookieStore.set({ name, value: '', ...options, maxAge: 0 }) } catch {}
-      },
-    },
-  })
+  const supabase = await createServerSupabaseClient()
 
   const { data: userRes } = await supabase.auth.getUser()
   const user = (userRes as any)?.user

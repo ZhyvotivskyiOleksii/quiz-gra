@@ -1,10 +1,6 @@
 import Link from 'next/link'
 import { AuthPageShell } from '@/components/auth/auth-page-shell'
 import { LoginForm } from '@/components/auth/login-form'
-import { cookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
-import { redirect } from 'next/navigation'
-
 type LoginPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>
 }

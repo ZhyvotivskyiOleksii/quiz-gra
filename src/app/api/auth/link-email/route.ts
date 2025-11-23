@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
+import { createServerSupabaseClient } from '@/lib/createServerSupabase'
 import { createClient } from '@supabase/supabase-js'
 
 // POST /api/auth/link-email
@@ -17,17 +16,8 @@ export async function POST(req: NextRequest) {
 
   if (!email) return NextResponse.json({ ok: false, error: 'missing_email' }, { status: 400 })
 
-  const cookieStore = await cookies()
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-  const rsc = createServerClient(url, anon, {
-    cookies: {
-      get: (name: string) => cookieStore.get(name)?.value,
-      set: (name: string, value: string, options: any) => { try { cookieStore.set({ name, value, ...options }) } catch {} },
-      remove: (name: string, options: any) => { try { cookieStore.set({ name, value: '', ...options, maxAge: 0 }) } catch {} },
-    },
-  })
+  const rsc = await createServerSupabaseClient()
 
   const { data: userRes } = await rsc.auth.getUser()
   const me = (userRes as any)?.user
@@ -125,4 +115,3 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ ok: true, method: 'user_update' })
 }
-

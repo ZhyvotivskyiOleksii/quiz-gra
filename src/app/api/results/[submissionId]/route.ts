@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
+import { createServerSupabaseClient } from '@/lib/createServerSupabase'
 
 export async function GET(
   _request: Request,
@@ -11,16 +10,7 @@ export async function GET(
     return NextResponse.json({ error: 'Missing submission id' }, { status: 400 })
   }
 
-  const cookieStore = await cookies()
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll: () => cookieStore.getAll().map((c) => ({ name: c.name, value: c.value })),
-      } as any,
-    },
-  )
+  const supabase = await createServerSupabaseClient()
 
   const {
     data: { session },

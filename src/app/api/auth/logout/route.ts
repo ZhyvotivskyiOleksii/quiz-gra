@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
+import { createServerSupabaseClient, type SupabaseCookieAdapter } from '@/lib/createServerSupabase'
 
 export async function POST(req: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -12,27 +12,29 @@ export async function POST(req: NextRequest) {
   const cookieStore = await cookies()
   const res = NextResponse.json({ ok: true })
 
-  const supabase = createServerClient(url, anon, {
-    cookies: {
-      get: (name: string) => cookieStore.get(name)?.value,
-      set: (name: string, value: string, options: any) => {
-        try {
-          res.cookies.set({ name, value, ...options })
-        } catch {}
-      },
-      remove: (name: string, options: any) => {
-        try {
-          res.cookies.set({ name, value: '', ...options, maxAge: 0 })
-        } catch {}
-      },
-      getAll: () => cookieStore.getAll().map((c) => ({ name: c.name, value: c.value })),
-      setAll: (cookiesToSet: Array<{ name: string; value: string; options?: any }>) => {
-        cookiesToSet.forEach(({ name, value, options }) => {
-          try { res.cookies.set({ name, value, ...options }) } catch {}
-        })
-      },
+  const cookieAdapter: SupabaseCookieAdapter = {
+    get: (name: string) => cookieStore.get(name)?.value,
+    getAll: () => cookieStore.getAll().map((c) => ({ name: c.name, value: c.value })),
+    set: (name: string, value: string, options: any) => {
+      try {
+        res.cookies.set({ name, value, ...(options ?? {}) })
+      } catch {}
     },
-  })
+    remove: (name: string, options: any) => {
+      try {
+        res.cookies.set({ name, value: '', ...(options ?? {}), maxAge: 0 })
+      } catch {}
+    },
+    setAll: (cookiesToSet) => {
+      cookiesToSet?.forEach(({ name, value, options }) => {
+        try {
+          res.cookies.set({ name, value, ...(options ?? {}) })
+        } catch {}
+      })
+    },
+  }
+
+  const supabase = await createServerSupabaseClient(cookieAdapter)
 
   try {
     await supabase.auth.signOut()

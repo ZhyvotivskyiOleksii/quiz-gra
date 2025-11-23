@@ -278,6 +278,7 @@ const normalizePhone = (value: string) => {
 
 function PhoneVerificationPanel() {
   const { toast } = useToast()
+  const supabase = React.useMemo(() => getSupabase(), [])
   const [open, setOpen] = React.useState(false)
   const [step, setStep] = React.useState<'phone' | 'code'>('phone')
   const [phone, setPhone] = React.useState('')
@@ -288,28 +289,32 @@ function PhoneVerificationPanel() {
   const [conflictPhone, setConflictPhone] = React.useState<string | null>(null)
   const [dialogError, setDialogError] = React.useState<string | null>(null)
 
+  const hydrate = React.useCallback(async () => {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (user) {
+        const p = (user as any).phone || (user.user_metadata as any)?.phone || null
+        setCurrentPhone(p)
+        setConfirmed(Boolean((user as any).phone_confirmed_at))
+      }
+    } catch {}
+  }, [supabase])
+
   React.useEffect(() => {
-    const supabase = getSupabase()
-
-    async function hydrate() {
-      try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser()
-        if (user) {
-          const p = (user as any).phone || (user.user_metadata as any)?.phone || null
-          setCurrentPhone(p)
-          setConfirmed(Boolean((user as any).phone_confirmed_at))
-        }
-      } catch {}
-    }
-
     hydrate()
     const { data: sub } = supabase.auth.onAuthStateChange(() => hydrate())
+    const unsubscribe = subscribeToAuthEvents((event) => {
+      if (event.type === 'profile:update' || event.type === 'session:refresh') {
+        hydrate()
+      }
+    })
     return () => {
       sub?.subscription?.unsubscribe()
+      unsubscribe?.()
     }
-  }, [])
+  }, [hydrate, supabase])
 
   const handleOpenChange = (nextOpen: boolean) => {
     setOpen(nextOpen)
@@ -354,6 +359,7 @@ function PhoneVerificationPanel() {
       const res = await fetch('/api/auth/phone/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ phone: norm }),
       })
       const payload = await res.json().catch(() => ({}))
@@ -413,6 +419,7 @@ function PhoneVerificationPanel() {
       const res = await fetch('/api/auth/phone/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ phone: norm, code }),
       })
       const payload = await res.json().catch(() => ({}))
@@ -422,6 +429,31 @@ function PhoneVerificationPanel() {
       handleOpenChange(false)
       setConfirmed(true)
       setCurrentPhone(norm)
+      try {
+        let session: { access_token: string; refresh_token: string } | null = null
+        try {
+          const refresh = await supabase.auth.refreshSession()
+          session = refresh?.data?.session ?? null
+        } catch {
+          const current = await supabase.auth.getSession()
+          session = current?.data?.session ?? null
+        }
+        if (session?.access_token && session?.refresh_token) {
+          await fetch('/auth/callback', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+              event: 'SIGNED_IN',
+              session: {
+                access_token: session.access_token,
+                refresh_token: session.refresh_token,
+              },
+            }),
+          }).catch(() => {})
+        }
+      } catch {}
+      await hydrate()
       emitAuthEvent({ type: 'profile:update' })
       toast({ title: 'Numer zweryfikowany' })
     } catch (e: any) {

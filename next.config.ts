@@ -5,6 +5,7 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  outputFileTracingRoot: __dirname,
   async redirects() {
     // Keep empty to avoid accidental cycles during debugging
     return []
@@ -36,7 +37,16 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'gateway.score-buster.dev.royal-gambit.io',
+        port: '',
+        pathname: '/**',
+      },
     ],
+  },
+  turbopack: {
+    root: __dirname,
   },
 };
 export default nextConfig;

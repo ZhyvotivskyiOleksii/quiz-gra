@@ -1,6 +1,5 @@
-import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { createServerClient } from '@supabase/ssr'
+import { createServerSupabaseClient } from '@/lib/createServerSupabase'
 import { createClient } from '@supabase/supabase-js'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Activity, Book, HelpCircle, Users, Zap } from 'lucide-react'
@@ -11,16 +10,7 @@ type LatestSubmissionRow = { id: string; submitted_at: string | null; quiz_id: s
 type ProfileRow = { id: string; display_name?: string | null }
 
 export default async function AdminDashboard() {
-  const cookieStore = await cookies()
-  const authClient = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll: () => cookieStore.getAll().map((c) => ({ name: c.name, value: c.value })),
-      } as any,
-    },
-  )
+  const authClient = await createServerSupabaseClient()
   const {
     data: { session },
   } = await authClient.auth.getSession()

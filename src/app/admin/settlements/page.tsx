@@ -1,5 +1,4 @@
-import { cookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
+import { createServerSupabaseClient } from '@/lib/createServerSupabase'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { formatDistanceToNow } from 'date-fns'
@@ -8,18 +7,7 @@ import { SettlementsClient } from '@/components/admin/settlements-client'
 
 async function getSettlementRows() {
   try {
-    const cookieStore = await cookies()
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get: (name: string) => cookieStore.get(name)?.value,
-          set: () => {},
-          remove: () => {},
-        },
-      },
-    )
+    const supabase = await createServerSupabaseClient()
 
     const { data, error } = await supabase
       .from('quiz_results')

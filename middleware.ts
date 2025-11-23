@@ -1,7 +1,7 @@
 // middleware.ts
 // Centralized authentication logic - this is the single source of truth
 import { NextResponse, type NextRequest } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
+import { createServerSupabaseClient, type SupabaseCookieAdapter } from '@/lib/createServerSupabase'
 
 type PendingCookie = { name: string; value: string; options?: any }
 
@@ -16,29 +16,20 @@ export async function middleware(req: NextRequest) {
     } catch {}
   }
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get: (name: string) => req.cookies.get(name)?.value,
-        set: (name: string, value: string, options: any) => persistCookie(name, value, options),
-        remove: (name: string, options: any) => persistCookie(name, '', { ...(options ?? {}), maxAge: 0 }),
-        getAll: () =>
-          req.cookies.getAll().map((cookie) => ({
-            name: cookie.name,
-            value: cookie.value,
-          })),
-        setAll: (cookiesToSet: Array<{ name: string; value: string; options?: any }>) => {
-          cookiesToSet.forEach(({ name, value, options }) => persistCookie(name, value, options))
-        },
-      },
-    },
-  )
+  const cookieAdapter: SupabaseCookieAdapter = {
+    get: (name: string) => req.cookies.get(name)?.value,
+    getAll: () => req.cookies.getAll().map((cookie) => ({ name: cookie.name, value: cookie.value })),
+    set: (name: string, value: string, options: any) => persistCookie(name, value, options),
+    remove: (name: string, options: any) => persistCookie(name, '', { ...(options ?? {}), maxAge: 0 }),
+    setAll: (cookiesToSet) => cookiesToSet?.forEach(({ name, value, options }) => persistCookie(name, value, options)),
+  }
+
+  const supabase = await createServerSupabaseClient(cookieAdapter)
 
   const {
-    data: { session },
-  } = await supabase.auth.getSession()
+    data: { user },
+  } = await supabase.auth.getUser()
+  const hasSession = Boolean(user)
 
   const path = req.nextUrl.pathname
   const isProtected = /^\/(?:[a-z]{2}(?:-[A-Z]{2})?\/)?(?:app|admin)(?:\/|$)/.test(path)
@@ -67,16 +58,15 @@ export async function middleware(req: NextRequest) {
     return applyCookies(baseResponse)
   }
 
-  if (!session && isProtected) {
+  if (!hasSession && isProtected) {
     return redirectWithCookies('/login')
   }
 
-  if (session && (isLoginPage || isRegisterPage)) {
+  if (hasSession && (isLoginPage || isRegisterPage)) {
     return redirectWithCookies('/app')
   }
 
-  if (session && isAdminRoute) {
-    const user = session.user
+  if (hasSession && isAdminRoute && user) {
     const envAdmins =
       process.env.NEXT_PUBLIC_ADMIN_EMAILS?.split(',').map((entry) => entry.trim().toLowerCase()).filter(Boolean) ?? []
     const emailLower = (user.email || (user.user_metadata?.email as string | undefined) || '').toLowerCase()

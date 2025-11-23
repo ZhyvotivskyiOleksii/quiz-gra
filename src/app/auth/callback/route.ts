@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
+import { createServerSupabaseClient, type SupabaseCookieAdapter } from '@/lib/createServerSupabase'
 
 // Minimal OAuth callback handler - exchanges the code and redirects back to the app
 export async function GET(req: NextRequest) {
@@ -9,33 +9,29 @@ export async function GET(req: NextRequest) {
   const redirectUrl = new URL(redirectTarget, publicBase)
   const response = NextResponse.redirect(redirectUrl)
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get: (name: string) => req.cookies.get(name)?.value,
-        set: (name: string, value: string, options: any) => {
-          try {
-            response.cookies.set({ name, value, ...options })
-          } catch {}
-        },
-        remove: (name: string, options: any) => {
-          try {
-            response.cookies.set({ name, value: '', ...options, maxAge: 0 })
-          } catch {}
-        },
-        getAll: () => req.cookies.getAll().map((c) => ({ name: c.name, value: c.value })),
-        setAll: (cookiesToSet: Array<{ name: string; value: string; options?: any }>) => {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            try {
-              response.cookies.set({ name, value, ...options })
-            } catch {}
-          })
-        },
-      },
+  const cookieAdapter: SupabaseCookieAdapter = {
+    get: (name: string) => req.cookies.get(name)?.value,
+    getAll: () => req.cookies.getAll().map((c) => ({ name: c.name, value: c.value })),
+    set: (name: string, value: string, options: any) => {
+      try {
+        response.cookies.set({ name, value, ...(options ?? {}) })
+      } catch {}
     },
-  )
+    remove: (name: string, options: any) => {
+      try {
+        response.cookies.set({ name, value: '', ...(options ?? {}), maxAge: 0 })
+      } catch {}
+    },
+    setAll: (cookiesToSet) => {
+      cookiesToSet?.forEach(({ name, value, options }) => {
+        try {
+          response.cookies.set({ name, value, ...(options ?? {}) })
+        } catch {}
+      })
+    },
+  }
+
+  const supabase = await createServerSupabaseClient(cookieAdapter)
 
   const code = url.searchParams.get('code')
   if (code) {
@@ -53,28 +49,29 @@ export async function GET(req: NextRequest) {
 // All redirect logic is handled by middleware
 export async function POST(req: NextRequest) {
   const res = NextResponse.json({ ok: true })
+  const syncAdapter: SupabaseCookieAdapter = {
+    get: (name: string) => req.cookies.get(name)?.value,
+    getAll: () => req.cookies.getAll().map((c) => ({ name: c.name, value: c.value })),
+    set: (name: string, value: string, options: any) => {
+      try {
+        res.cookies.set({ name, value, ...(options ?? {}) })
+      } catch {}
+    },
+    remove: (name: string, options: any) => {
+      try {
+        res.cookies.set({ name, value: '', ...(options ?? {}), maxAge: 0 })
+      } catch {}
+    },
+    setAll: (cookiesToSet) => {
+      cookiesToSet?.forEach(({ name, value, options }) => {
+        try {
+          res.cookies.set({ name, value, ...(options ?? {}) })
+        } catch {}
+      })
+    },
+  }
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get: (name: string) => req.cookies.get(name)?.value,
-        set: (name: string, value: string, options: any) => { 
-          try { res.cookies.set({ name, value, ...options }) } catch {} 
-        },
-        remove: (name: string, options: any) => { 
-          try { res.cookies.set({ name, value: '', ...options, maxAge: 0 }) } catch {} 
-        },
-        getAll: () => req.cookies.getAll().map((c) => ({ name: c.name, value: c.value })),
-        setAll: (cookiesToSet: Array<{ name: string; value: string; options?: any }>) => {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            try { res.cookies.set({ name, value, ...options }) } catch {}
-          })
-        },
-      },
-    }
-  )
+  const supabase = await createServerSupabaseClient(syncAdapter)
 
   try {
     const body = await req.json().catch(() => ({})) as any

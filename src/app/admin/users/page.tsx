@@ -1,6 +1,5 @@
-import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { createServerClient } from '@supabase/ssr'
+import { createServerSupabaseClient } from '@/lib/createServerSupabase'
 import { createClient } from '@supabase/supabase-js'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -33,16 +32,7 @@ type ResultRow = {
 }
 
 export default async function AdminUsersPage() {
-  const cookieStore = await cookies()
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll: () => cookieStore.getAll().map((c) => ({ name: c.name, value: c.value })),
-      } as any,
-    },
-  )
+  const supabase = await createServerSupabaseClient()
 
   const {
     data: { session },
@@ -71,11 +61,20 @@ export default async function AdminUsersPage() {
     serviceClient.from('quiz_results').select('prize_awarded,submitted_at').gte('submitted_at', monthAgoIso),
   ])
 
+  const handleMissingTable = (error: any, table: string) => {
+    if (!error) return false
+    if (error.code === 'PGRST205' && typeof error.message === 'string' && error.message.includes(`'public.${table}'`)) {
+      console.warn(`Table ${table} missing, skipping stats block.`)
+      return true
+    }
+    return false
+  }
+
   if (profilesRes.error) throw profilesRes.error
   if (totalProfilesRes.error) throw totalProfilesRes.error
   if (phoneProfilesRes.error) throw phoneProfilesRes.error
   if (weeklySubmissionsRes.error) throw weeklySubmissionsRes.error
-  if (recentPrizeRes.error) throw recentPrizeRes.error
+  if (recentPrizeRes.error && !handleMissingTable(recentPrizeRes.error, 'quiz_results')) throw recentPrizeRes.error
 
   const profiles = (profilesRes.data || []) as ProfileRow[]
   const userIds = profiles.map((profile) => profile.id).filter((id): id is string => Boolean(id))
@@ -94,9 +93,9 @@ export default async function AdminUsersPage() {
         .in('user_id', userIds),
     ])
     if (submissionsRes.error) throw submissionsRes.error
-    if (resultsRes.error) throw resultsRes.error
+    if (resultsRes.error && !handleMissingTable(resultsRes.error, 'quiz_results')) throw resultsRes.error
     submissionRows = (submissionsRes.data || []) as SubmissionRow[]
-    resultRows = (resultsRes.data || []) as ResultRow[]
+    resultRows = handleMissingTable(resultsRes.error, 'quiz_results') ? [] : ((resultsRes.data || []) as ResultRow[])
   }
 
   const submissionMap = new Map<
@@ -175,7 +174,9 @@ export default async function AdminUsersPage() {
   const totalUsers = totalProfilesRes.count ?? 0
   const phoneUsers = phoneUsersTotal ?? phoneProfilesRes.count ?? 0
   const weeklySubmissions = weeklySubmissionsRes.count ?? 0
-  const recentPrizeRows = (recentPrizeRes.data || []) as { prize_awarded?: number | null }[]
+  const recentPrizeRows = handleMissingTable(recentPrizeRes.error, 'quiz_results')
+    ? []
+    : ((recentPrizeRes.data || []) as { prize_awarded?: number | null }[])
   const prizePaidLast30 = recentPrizeRows.reduce((sum, row) => sum + Number(row.prize_awarded || 0), 0)
 
   const currencyFormatter = new Intl.NumberFormat('pl-PL', {

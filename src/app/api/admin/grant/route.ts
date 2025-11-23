@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
+import { createServerSupabaseClient } from '@/lib/createServerSupabase'
 import crypto from 'crypto'
 
 // POST /api/admin/grant { code: string }
@@ -10,18 +9,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({})) as any
   const code = String(body?.code || '')
 
-  const cookieStore = await cookies()
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get: (name: string) => cookieStore.get(name)?.value,
-        set: (name: string, value: string, options: any) => { try { cookieStore.set({ name, value, ...options }) } catch {} },
-        remove: (name: string, options: any) => { try { cookieStore.set({ name, value: '', ...options }) } catch {} },
-      },
-    }
-  )
+  const supabase = await createServerSupabaseClient()
 
   const { data: { session } } = await supabase.auth.getSession()
   if (!session?.user?.email) return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
@@ -42,4 +30,3 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ ok: true })
 }
-

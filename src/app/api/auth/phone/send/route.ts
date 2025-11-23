@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
+import { createServerSupabaseClient } from '@/lib/createServerSupabase'
 
 function normalizePhone(input: string | null | undefined) {
   if (!input) return ''
@@ -22,22 +21,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'invalid_phone' }, { status: 400 })
   }
 
-  const cookieStore = await cookies()
-  const supabase = createServerClient(url, anon, {
-    cookies: {
-      get: (name: string) => cookieStore.get(name)?.value,
-      set: (name: string, value: string, options: any) => {
-        try {
-          cookieStore.set({ name, value, ...options })
-        } catch {}
-      },
-      remove: (name: string, options: any) => {
-        try {
-          cookieStore.set({ name, value: '', ...options, maxAge: 0 })
-        } catch {}
-      },
-    },
-  })
+  const supabase = await createServerSupabaseClient()
 
   const {
     data: { user },

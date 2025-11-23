@@ -1,19 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
+import { createServerSupabaseClient } from '@/lib/createServerSupabase'
 import { createClient } from '@supabase/supabase-js'
 
-export async function GET(req: NextRequest) {
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get: (name: string) => req.cookies.get(name)?.value,
-        set: () => {},
-        remove: () => {},
-      },
-    },
-  )
+export async function GET(_req: NextRequest) {
+  const supabase = await createServerSupabaseClient()
 
   const {
     data: { user },

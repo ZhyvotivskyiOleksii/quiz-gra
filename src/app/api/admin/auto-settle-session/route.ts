@@ -1,22 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
+import { createServerSupabaseClient } from '@/lib/createServerSupabase'
 import { createClient } from '@supabase/supabase-js'
 import { autoSettle } from '@/lib/autoSettle'
 
-export async function POST(req: NextRequest) {
-  const cookieStore = await cookies()
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get: (name: string) => cookieStore.get(name)?.value,
-        set: () => {},
-        remove: () => {},
-      },
-    },
-  )
+export async function POST(_req: NextRequest) {
+  const supabase = await createServerSupabaseClient()
 
   const {
     data: { user },
@@ -66,4 +54,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: err?.message || 'internal_error' }, { status: 500 })
   }
 }
-

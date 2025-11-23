@@ -21,6 +21,8 @@ const FINISHED_STATUS_IDS = new Set([
 const MATCH_REFRESH_INTERVAL_MS = 5 * 60 * 1000
 const HEARTBEAT_INTERVAL_MS = 30_000
 const HEARTBEAT_TIMEOUT_MS = 90_000
+const HEARTBEAT_FAIL_CODE = 4000
+const RECONNECT_STEPS_MS = [1_000, 2_000, 5_000, 10_000, 30_000, 60_000]
 const WS_BUFFER_MINUTES = getWsBufferMinutes()
 
 type ActiveMatch = {
@@ -35,8 +37,10 @@ const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 const activeMatches = new Map<number, ActiveMatch>()
 let ws: WebSocket | null = null
 let refreshTimer: NodeJS.Timeout | null = null
-let heartbeatTimer: NodeJS.Timeout | null = null
-let reconnectDelayMs = 2000
+let heartbeatInterval: NodeJS.Timeout | null = null
+let heartbeatDeadline: NodeJS.Timeout | null = null
+let reconnectTimer: NodeJS.Timeout | null = null
+let reconnectAttempt = 0
 let lastHeartbeatAck = Date.now()
 
 async function fetchPendingMatches(client: SupabaseClient) {
@@ -86,6 +90,7 @@ async function refreshSubscriptions(wsInstance: WebSocket) {
 }
 
 async function handleMessage(raw: WebSocket.RawData) {
+  markHeartbeatAck()
   let payload: any
   try {
     payload = JSON.parse(raw.toString())
@@ -95,11 +100,8 @@ async function handleMessage(raw: WebSocket.RawData) {
   }
 
   if (payload?.type === 'pong' || payload?.action === 'pong' || raw.toString() === 'pong') {
-    lastHeartbeatAck = Date.now()
     return
   }
-
-  lastHeartbeatAck = Date.now()
 
   if (payload?.type !== 'updatedEventStatus') return
   const eventId = Number(payload.eventId)
@@ -132,12 +134,19 @@ async function handleMessage(raw: WebSocket.RawData) {
 }
 
 function scheduleRefresh() {
-  if (refreshTimer) clearInterval(refreshTimer)
+  clearRefreshTimer()
   refreshTimer = setInterval(() => {
     if (ws && ws.readyState === WebSocket.OPEN) {
       refreshSubscriptions(ws)
     }
   }, MATCH_REFRESH_INTERVAL_MS)
+}
+
+function clearRefreshTimer() {
+  if (refreshTimer) {
+    clearInterval(refreshTimer)
+    refreshTimer = null
+  }
 }
 
 function start() {
@@ -147,47 +156,123 @@ function start() {
   ws.on('open', async () => {
     console.log('[ws-settlement] Connected')
     lastHeartbeatAck = Date.now()
-    reconnectDelayMs = 2000
+    reconnectAttempt = 0
     startHeartbeat()
     await refreshSubscriptions(ws!)
     scheduleRefresh()
   })
 
   ws.on('message', handleMessage)
+  ws.on('pong', markHeartbeatAck)
 
   ws.on('close', (code) => {
-    console.warn('[ws-settlement] Connection closed', code)
-    if (refreshTimer) clearInterval(refreshTimer)
-    if (heartbeatTimer) clearInterval(heartbeatTimer)
-    activeMatches.clear()
-    const delay = reconnectDelayMs
-    reconnectDelayMs = Math.min(reconnectDelayMs * 2, 60_000)
-    setTimeout(start, delay)
+    const category = describeCloseCode(code)
+    if (category === 'normal') {
+      console.log('[ws-settlement] Connection closed normally', code)
+    } else if (category === 'expected') {
+      console.warn('[ws-settlement] Connection closed (expected)', code)
+    } else {
+      console.error('[ws-settlement] Connection closed abnormally', code)
+    }
+    cleanupConnection()
+    scheduleReconnect(`close-${code}`)
   })
 
   ws.on('error', (err) => {
     console.error('[ws-settlement] WebSocket error', err)
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.terminate()
+      return
+    }
+    cleanupConnection()
+    scheduleReconnect('error')
   })
 }
 
 start()
 
 function startHeartbeat() {
-  if (heartbeatTimer) clearInterval(heartbeatTimer)
-  heartbeatTimer = setInterval(() => {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return
-    const sinceAck = Date.now() - lastHeartbeatAck
-    if (sinceAck > HEARTBEAT_TIMEOUT_MS) {
-      console.warn('[ws-settlement] Heartbeat timeout, restarting connection...')
-      ws.terminate()
-      return
-    }
-    try {
-      ws.send(JSON.stringify({ action: 'ping' }))
-    } catch (err) {
-      console.error('[ws-settlement] Failed to send heartbeat ping', err)
-    }
+  stopHeartbeat()
+  sendHeartbeat()
+  heartbeatInterval = setInterval(() => {
+    sendHeartbeat()
   }, HEARTBEAT_INTERVAL_MS)
+}
+
+function stopHeartbeat() {
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval)
+    heartbeatInterval = null
+  }
+  if (heartbeatDeadline) {
+    clearTimeout(heartbeatDeadline)
+    heartbeatDeadline = null
+  }
+}
+
+function sendHeartbeat() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return
+  try {
+    if (typeof ws.ping === 'function') {
+      ws.ping()
+    }
+  } catch (err) {
+    console.warn('[ws-settlement] Failed to send native ping', err)
+  }
+  try {
+    ws.send(JSON.stringify({ action: 'ping' }))
+  } catch (err) {
+    console.error('[ws-settlement] Failed to send heartbeat ping', err)
+  }
+  scheduleHeartbeatTimeout()
+}
+
+function scheduleHeartbeatTimeout() {
+  if (heartbeatDeadline) clearTimeout(heartbeatDeadline)
+  heartbeatDeadline = setTimeout(() => {
+    console.warn('[ws-settlement] Heartbeat timeout, forcing reconnect...')
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.terminate()
+    } else {
+      cleanupConnection()
+      scheduleReconnect('heartbeat-timeout')
+    }
+  }, HEARTBEAT_TIMEOUT_MS)
+}
+
+function markHeartbeatAck() {
+  lastHeartbeatAck = Date.now()
+  if (heartbeatDeadline) {
+    clearTimeout(heartbeatDeadline)
+    heartbeatDeadline = null
+  }
+}
+
+function cleanupConnection() {
+  stopHeartbeat()
+  clearRefreshTimer()
+  activeMatches.clear()
+  ws = null
+}
+
+function scheduleReconnect(reason: string) {
+  if (reconnectTimer) return
+  const delay =
+    RECONNECT_STEPS_MS[Math.min(reconnectAttempt, RECONNECT_STEPS_MS.length - 1)]
+  reconnectAttempt = Math.min(reconnectAttempt + 1, RECONNECT_STEPS_MS.length - 1)
+  console.warn(`[ws-settlement] Reconnecting in ${delay}ms due to ${reason}`)
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null
+    start()
+  }, delay)
+}
+
+function describeCloseCode(code: number | undefined) {
+  if (code === 1000) return 'normal'
+  if (code === 1001) return 'expected'
+  if (code === 1006 || code === 1011) return 'abnormal'
+  if (code === HEARTBEAT_FAIL_CODE) return 'heartbeat'
+  return 'other'
 }
 
 function getWsBufferMinutes() {
