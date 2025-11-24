@@ -16,6 +16,7 @@ import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import Image from 'next/image'
 import { emitAuthEvent, subscribeToAuthEvents } from '@/lib/auth-events'
+import { useAuth } from '@/components/app/auth-context'
 
 export default function SettingsPage() {
   return (
@@ -26,6 +27,7 @@ export default function SettingsPage() {
 }
 
 function SettingsContent() {
+  const auth = useAuth()
   const router = useRouter()
   const sp = useSearchParams()
   const urlTab = sp?.get('tab') ?? ''
@@ -50,7 +52,7 @@ function SettingsContent() {
   const [avatarUrl, setAvatarUrl] = React.useState<string|undefined>(undefined)
   const [initials, setInitials] = React.useState<string>('US')
   const [hasPhone, setHasPhone] = React.useState(false)
-  const [phoneConfirmed, setPhoneConfirmed] = React.useState(false)
+  const [phoneConfirmed, setPhoneConfirmed] = React.useState(!auth.needsPhone)
   const [birthDate, setBirthDate] = React.useState<Date | null>(null)
   const [editing, setEditing] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
@@ -109,6 +111,10 @@ function SettingsContent() {
       unsubscribe?.()
     }
   }, [syncProfileFromAuth])
+
+  React.useEffect(() => {
+    setPhoneConfirmed(!auth.needsPhone)
+  }, [auth.needsPhone])
 
   async function handleSave() {
     if (!editing) return
@@ -277,6 +283,7 @@ const normalizePhone = (value: string) => {
 }
 
 function PhoneVerificationPanel() {
+  const auth = useAuth()
   const { toast } = useToast()
   const supabase = React.useMemo(() => getSupabase(), [])
   const [open, setOpen] = React.useState(false)
@@ -285,7 +292,7 @@ function PhoneVerificationPanel() {
   const [code, setCode] = React.useState('')
   const [loading, setLoading] = React.useState(false)
   const [currentPhone, setCurrentPhone] = React.useState<string | null>(null)
-  const [confirmed, setConfirmed] = React.useState<boolean>(false)
+  const [confirmed, setConfirmed] = React.useState<boolean>(!auth.needsPhone)
   const [conflictPhone, setConflictPhone] = React.useState<string | null>(null)
   const [dialogError, setDialogError] = React.useState<string | null>(null)
 
@@ -315,6 +322,10 @@ function PhoneVerificationPanel() {
       unsubscribe?.()
     }
   }, [hydrate, supabase])
+
+  React.useEffect(() => {
+    setConfirmed(!auth.needsPhone)
+  }, [auth.needsPhone])
 
   const handleOpenChange = (nextOpen: boolean) => {
     setOpen(nextOpen)

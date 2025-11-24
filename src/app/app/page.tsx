@@ -38,6 +38,8 @@ type StatCard = {
   alt: string
 }
 
+const EAGER_STAT_IMAGES = new Set(['/panel/2.png', '/panel/3.png'])
+
 export default async function AppDashboard() {
   const supabase = await createServerSupabaseClient()
   const {
@@ -354,6 +356,7 @@ function getStatCards(
 }
 
 function renderStatCard(card: StatCard, isMobile: boolean) {
+  const isHeroImage = EAGER_STAT_IMAGES.has(card.img)
   return (
     <Card
       key={`${card.title}-${isMobile ? 'mobile' : 'desktop'}`}
@@ -363,7 +366,15 @@ function renderStatCard(card: StatCard, isMobile: boolean) {
       )}
     >
       <div className="pointer-events-none absolute inset-y-0 right-0 w-1/2 flex items-end justify-end">
-        <Image src={card.img} alt={card.alt} width={600} height={600} className="h-full w-auto opacity-95" priority={false} />
+        <Image
+          src={card.img}
+          alt={card.alt}
+          width={600}
+          height={600}
+          className="h-full w-auto opacity-95"
+          priority={isHeroImage}
+          loading={isHeroImage ? 'eager' : undefined}
+        />
       </div>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium text-muted-foreground">{card.title}</CardTitle>

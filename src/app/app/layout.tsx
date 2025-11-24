@@ -1,6 +1,7 @@
 import { ReactNode } from 'react'
 import { createServerSupabaseClient } from '@/lib/createServerSupabase'
-import { AppShellClient, InitialAuthState } from '@/components/app/app-shell-client'
+import { AppShellClient } from '@/components/app/app-shell-client'
+import { InitialAuthState } from '@/types/auth'
 
 export const dynamic = 'force-dynamic'
 export const fetchCache = 'force-no-store'
@@ -25,7 +26,15 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       }`.trim()
     : ''
 
-  let profile: { display_name?: string | null; avatar_url?: string | null; is_admin?: boolean | null } | null = null
+  let profile:
+    | {
+        display_name?: string | null
+        avatar_url?: string | null
+        is_admin?: boolean | null
+        phone?: string | null
+        phone_confirmed_at?: string | null
+      }
+    | null = null
   let walletBalance: number | null = null
   let shortId: string | null = null
 
@@ -35,7 +44,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         try {
           const { data, error } = await supabase
             .from('profiles')
-            .select('display_name, avatar_url, is_admin')
+            .select('display_name, avatar_url, is_admin, phone, phone_confirmed_at')
             .eq('id', user.id)
             .maybeSingle()
           return { data, error }
@@ -81,9 +90,8 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           : null
   }
 
-  const hasPhone =
-    Boolean(user && ((user as any).phone || (user.user_metadata as any)?.phone))
   const phoneConfirmed =
+    Boolean(profile?.phone_confirmed_at) ||
     Boolean(user && ((user as any).phone_confirmed_at || (user.user_metadata as any)?.phone_confirmed_at))
 
   const adminEmailAllowList =
@@ -115,7 +123,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     displayName: displayName || undefined,
     shortId,
     isAdmin,
-    needsPhone: user ? !(hasPhone && phoneConfirmed) : false,
+    needsPhone: user ? !phoneConfirmed : false,
     walletBalance,
     hasSession: Boolean(user),
   }
