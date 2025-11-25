@@ -17,7 +17,7 @@ export async function performClientLogout() {
   } catch {}
 
   try {
-    await fetch('/auth/callback', {
+    await fetch('/api/auth/callback', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
@@ -26,4 +26,3 @@ export async function performClientLogout() {
     })
   } catch {}
 }
-

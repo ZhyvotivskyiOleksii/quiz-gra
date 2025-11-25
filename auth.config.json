@@ -1,0 +1,14 @@
+{
+  "site_url": "https://quiz-time.pl",
+  "redirect_urls": [
+    "https://quiz-time.pl",
+    "https://quiz-time.pl/auth/callback",
+    "https://quiz-time.pl/?auth=login#"
+  ],
+  "cookies": {
+    "name": "sb",
+    "lifetime": 604800,
+    "domain": "quiz-time.pl",
+    "same_site": "lax"
+  }
+}

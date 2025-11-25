@@ -7,101 +7,75 @@ import { Button } from '@/components/ui/button'
 import { formatDistanceToNow } from 'date-fns'
 import { pl } from 'date-fns/locale'
 import { useToast } from '@/hooks/use-toast'
-import { RefreshCcw, Loader2 } from 'lucide-react'
-import { useRouter } from 'next/navigation'
-import { getSupabase } from '@/lib/supabaseClient'
-
-type SettlementRow = {
-  id: string
-  status: string | null
-  prize_awarded: number | null
-  submitted_at: string | null
-  user_id: string | null
-  quizzes?: { title: string | null } | null
-  profile?: { id: string; display_name: string | null } | null
-}
+import { RefreshCcw, Loader2, AlertTriangle } from 'lucide-react'
+import type { AdminSettlementRow, PendingSettlementTarget } from '@/lib/admin/fetchSettlements'
 
 type SettlementsClientProps = {
-  initialRows: SettlementRow[]
+  initialRows: AdminSettlementRow[]
+  initialPending: PendingSettlementTarget[]
 }
 
-export function SettlementsClient({ initialRows }: SettlementsClientProps) {
-  const [rows, setRows] = React.useState<SettlementRow[]>(initialRows)
+type SettlementsResponse = {
+  ok?: boolean
+  rows?: AdminSettlementRow[]
+  pending?: PendingSettlementTarget[]
+}
+
+type QuizSettlementSummary = {
+  quizId: string
+  quizTitle: string
+  processed: number
+  winners: number
+  totalPrize: number
+  topPoints: number | null
+  settledAt: string | null
+}
+
+export function SettlementsClient({ initialRows, initialPending }: SettlementsClientProps) {
+  const [rows, setRows] = React.useState<AdminSettlementRow[]>(initialRows)
+  const [pending, setPending] = React.useState<PendingSettlementTarget[]>(initialPending)
   const [settling, setSettling] = React.useState(false)
   const [loading, setLoading] = React.useState(false)
+  const [singleSettling, setSingleSettling] = React.useState<string | null>(null)
   const [hydrated, setHydrated] = React.useState(false)
   const { toast } = useToast()
-  const router = useRouter()
 
   React.useEffect(() => {
     setHydrated(true)
   }, [])
 
+  const numberFormatter = React.useMemo(() => new Intl.NumberFormat('pl-PL'), [])
+  const currencyFormatter = React.useMemo(
+    () => new Intl.NumberFormat('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    [],
+  )
+  const summaries = React.useMemo(() => summarizeSettlements(rows), [rows])
+
   const loadSettlements = React.useCallback(async () => {
     setLoading(true)
     try {
-      const supabase = getSupabase()
-      const { data, error } = await supabase
-        .from('quiz_results')
-        .select('id,status,prize_awarded,submitted_at,user_id,quizzes(title)')
-        .order('submitted_at', { ascending: false })
-        .limit(40)
-
-      if (error) {
-        const missingTable =
-          (typeof error.code === 'string' && error.code === 'PGRST205') ||
-          (typeof error.message === 'string' && error.message.includes('quiz_results'))
-        if (missingTable) {
-          setRows([])
-          return
-        }
-        console.error('Failed to load settlements', error)
-        toast({
-          title: 'Nie udało się pobrać rozliczeń',
-          description: 'Spróbuj ponownie za chwilę.',
-          variant: 'destructive',
-        })
-        return
+      const resp = await fetch('/api/admin/settlements', { credentials: 'include' })
+      if (!resp.ok) {
+        throw new Error('Nie udało się pobrać rozliczeń')
       }
-
-      const settlementRows = data || []
-      const userIds = Array.from(
-        new Set(
-          settlementRows
-            .map((row) => row.user_id)
-            .filter((id): id is string => Boolean(id)),
-        ),
-      )
-
-      const profileMap = new Map<string, { id: string; display_name: string | null }>()
-      if (userIds.length > 0) {
-        try {
-          const { data: profiles } = await supabase
-            .from('profiles')
-            .select('id,display_name')
-            .in('id', userIds)
-          if (profiles) {
-            profiles.forEach((profile) => {
-              if (profile?.id) profileMap.set(profile.id, profile as { id: string; display_name: string | null })
-            })
-          }
-        } catch (err) {
-          console.error('Failed to load profiles', err)
-        }
+      const payload = (await resp.json()) as SettlementsResponse
+      if (!payload?.ok || !Array.isArray(payload.rows)) {
+        throw new Error('Nie udało się pobrać rozliczeń')
       }
-
-      const rowsWithProfiles = settlementRows.map((row) => ({
-        ...row,
-        profile: row.user_id ? profileMap.get(row.user_id) ?? null : null,
-      }))
-
-      setRows(rowsWithProfiles)
+      setRows(payload.rows)
+      setPending(Array.isArray(payload.pending) ? payload.pending : [])
+      return payload
     } catch (err) {
       console.error('Failed to load settlements', err)
+      toast({
+        title: 'Nie udało się pobrać rozliczeń',
+        description: 'Spróbuj ponownie za chwilę.',
+        variant: 'destructive',
+      })
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [toast])
 
   const handleAutoSettle = React.useCallback(async () => {
     setSettling(true)
@@ -118,13 +92,16 @@ export function SettlementsClient({ initialRows }: SettlementsClientProps) {
 
       const summary = {
         attempted: data.attempted || 0,
-        settled: data.settled?.length || 0,
-        skipped: data.skipped?.length || 0,
+        settled: Array.isArray(data.settled) ? data.settled.length : 0,
+        skipped: Array.isArray(data.skipped) ? data.skipped.length : 0,
       }
 
       toast({
-        title: 'Rozliczenie zakończone',
-        description: `Przetworzono: ${summary.attempted}, rozliczono: ${summary.settled}, pominięto: ${summary.skipped}`,
+        title: summary.settled ? 'Rozliczono quizy' : 'Brak quizów do rozliczenia',
+        description:
+          summary.settled > 0
+            ? `Zamknięto ${summary.settled} quiz${summary.settled === 1 ? '' : 'ów'}. Pominęto ${summary.skipped}.`
+            : 'Sprawdź, czy deadline minął oraz czy pytania future mają ustawione wyniki.',
       })
 
       // Wait a bit for database to update, then reload settlements
@@ -133,7 +110,7 @@ export function SettlementsClient({ initialRows }: SettlementsClientProps) {
     } catch (err: any) {
       toast({
         title: 'Błąd rozliczenia',
-        description: err?.message || 'Nie udało się rozliczyć kвизов',
+        description: err?.message || 'Nie udało się rozliczyć quizów',
         variant: 'destructive',
       })
     } finally {
@@ -141,8 +118,105 @@ export function SettlementsClient({ initialRows }: SettlementsClientProps) {
     }
   }, [toast, loadSettlements])
 
+  const handleManualSettle = React.useCallback(
+    async (quizId: string) => {
+      setSingleSettling(quizId)
+      try {
+        const resp = await fetch('/api/admin/settlements', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ quizId }),
+        })
+        const data = await resp.json().catch(() => ({}))
+        if (!resp.ok || !data?.ok) {
+          throw new Error(data?.error || 'Nie udało się rozliczyć quizu')
+        }
+        toast({ title: 'Quiz rozliczony', description: 'Wyniki zostały przeliczone.' })
+        await loadSettlements()
+      } catch (err: any) {
+        toast({
+          title: 'Błąd rozliczenia',
+          description: err?.message || 'Nie udało się rozliczyć quizu',
+          variant: 'destructive',
+        })
+      } finally {
+        setSingleSettling(null)
+      }
+    },
+    [toast, loadSettlements],
+  )
+
   return (
     <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Quizy oczekujące na rozliczenie</CardTitle>
+              <CardDescription>Rundy po deadlinie, które nadal mają status „draft/published”.</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {pending.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Brak rund do rozliczenia.</p>
+          ) : (
+            <div className="space-y-3">
+              {pending.map((quiz) => {
+                const deadlineLabel =
+                  quiz.deadline_at && hydrated
+                    ? formatDistanceToNow(new Date(quiz.deadline_at), { addSuffix: true, locale: pl })
+                    : quiz.deadline_at ?? '—'
+                const futureResolved = quiz.future_total - quiz.future_pending
+                const futureStatus =
+                  quiz.future_total > 0 ? `${futureResolved}/${quiz.future_total} rozstrzygniętych` : 'Brak pytań przyszłościowych'
+                return (
+                  <div key={quiz.quiz_id} className="rounded-xl border border-white/10 bg-card/80 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-white">{quiz.quiz_title}</div>
+                        <div className="text-xs text-muted-foreground">
+                          Runda: {quiz.round_label || '—'} • Deadline: {deadlineLabel}
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+                          <span className="inline-flex items-center gap-1">
+                            <AlertTriangle className="h-3.5 w-3.5 text-amber-300" />
+                            {futureStatus}
+                          </span>
+                          <span>Zgłoszenia: {quiz.submissions}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Badge className="bg-primary/20 text-primary-foreground/80">
+                          {quiz.round_status ?? 'draft'}
+                        </Badge>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="gap-2"
+                          disabled={settling || loading || singleSettling === quiz.quiz_id}
+                          onClick={() => handleManualSettle(quiz.quiz_id)}
+                        >
+                          {singleSettling === quiz.quiz_id ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Rozliczamy…
+                            </>
+                          ) : (
+                            'Rozlicz teraz'
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -187,37 +261,43 @@ export function SettlementsClient({ initialRows }: SettlementsClientProps) {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {rows.length === 0 ? (
+          {summaries.length === 0 ? (
             <p className="text-sm text-muted-foreground">Brak jeszcze rozliczonych quizów.</p>
           ) : (
             <div className="space-y-3">
-              {rows.map((row) => {
-                const status = (row.status || 'pending').toLowerCase()
-                const prize = typeof row.prize_awarded === 'number' ? `${row.prize_awarded.toFixed(2)} zł` : '—'
-                const updated = row.submitted_at
-                  ? hydrated
-                    ? formatDistanceToNow(new Date(row.submitted_at), { addSuffix: true, locale: pl })
-                    : '—'
-                  : '—'
-                const badgeColor =
-                  status === 'won'
-                    ? 'bg-emerald-500/20 text-emerald-200'
-                    : status === 'lost'
-                      ? 'bg-rose-500/20 text-rose-200'
-                      : 'bg-amber-500/20 text-amber-200'
+              {summaries.map((summary) => {
+                const settledAgo =
+                  summary.settledAt && hydrated
+                    ? formatDistanceToNow(new Date(summary.settledAt), { addSuffix: true, locale: pl })
+                    : summary.settledAt
+                      ? new Date(summary.settledAt).toLocaleString('pl-PL')
+                      : '—'
                 return (
-                  <div key={row.id} className="rounded-xl border border-white/10 bg-card/80 p-4">
+                  <div key={summary.quizId} className="rounded-xl border border-white/10 bg-card/80 p-4 space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
-                        <div className="text-sm font-semibold text-white">{row.quizzes?.title ?? 'Quiz'}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {row.profile?.display_name || 'Użytkownik anonimowy'} • {updated}
-                        </div>
+                        <div className="text-sm font-semibold text-white">{summary.quizTitle}</div>
+                        <div className="text-xs text-muted-foreground">Rozliczono {settledAgo}</div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <Badge className={badgeColor}>{status}</Badge>
-                        <span className="text-sm text-white/80">Nagroda: {prize}</span>
-                      </div>
+                      <Badge className="bg-primary/20 text-primary-foreground/80">
+                        Wygrani: {numberFormatter.format(summary.winners)}
+                      </Badge>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                      <SummaryStat label="Zgłoszenia" value={numberFormatter.format(summary.processed)} />
+                      <SummaryStat label="Przegrani" value={numberFormatter.format(summary.processed - summary.winners)} />
+                      <SummaryStat
+                        label="Suma nagród"
+                        value={`${currencyFormatter.format(summary.totalPrize ?? 0)} zł`}
+                      />
+                      <SummaryStat
+                        label="Najlepszy wynik"
+                        value={
+                          typeof summary.topPoints === 'number'
+                            ? `${numberFormatter.format(summary.topPoints)} pkt`
+                            : '—'
+                        }
+                      />
                     </div>
                   </div>
                 )
@@ -226,6 +306,53 @@ export function SettlementsClient({ initialRows }: SettlementsClientProps) {
           )}
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+function summarizeSettlements(rows: AdminSettlementRow[]): QuizSettlementSummary[] {
+  const map = new Map<string, QuizSettlementSummary>()
+  rows.forEach((row) => {
+    if (!row.quiz_id) return
+    const key = row.quiz_id
+    const summary =
+      map.get(key) ??
+      {
+        quizId: key,
+        quizTitle: row.quizzes?.title ?? 'Quiz',
+        processed: 0,
+        winners: 0,
+        totalPrize: 0,
+        topPoints: null,
+        settledAt: row.submitted_at ?? null,
+      }
+
+    summary.processed += 1
+    if ((row.prize_awarded ?? 0) > 0) {
+      summary.winners += 1
+    }
+    summary.totalPrize += row.prize_awarded ?? 0
+    if (typeof row.points === 'number') {
+      summary.topPoints = summary.topPoints === null ? row.points : Math.max(summary.topPoints, row.points)
+    }
+    if (!summary.settledAt || (row.submitted_at && row.submitted_at > summary.settledAt)) {
+      summary.settledAt = row.submitted_at
+    }
+    map.set(key, summary)
+  })
+
+  return Array.from(map.values()).sort((a, b) => {
+    const aTime = a.settledAt ? Date.parse(a.settledAt) : 0
+    const bTime = b.settledAt ? Date.parse(b.settledAt) : 0
+    return bTime - aTime
+  })
+}
+
+function SummaryStat({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border border-white/5 bg-black/20 px-3 py-2">
+      <p className="text-[11px] uppercase tracking-wide text-white/60">{label}</p>
+      <p className="text-sm font-semibold text-white">{value}</p>
     </div>
   )
 }

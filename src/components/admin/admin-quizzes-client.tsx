@@ -7,6 +7,8 @@ import { getSupabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
 import { Plus, RefreshCcw, Settings2, Timer, Trash2 } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { getTeamLogoUrl } from '@/lib/footballApi'
+import { cn } from '@/lib/utils'
 
 function formatTimeLeft(deadline?: string | null) {
   if (!deadline) return null
@@ -33,6 +35,12 @@ type EnrichedRound = {
   finished: boolean
   image: string
   prize: number | null
+  primaryMatch: {
+    homeName: string
+    awayName: string
+    homeLogo: string | null
+    awayLogo: string | null
+  } | null
 }
 
 const FINISHED_STATUSES = ['finished', 'settled', 'closed', 'completed', 'complete', 'done']
@@ -53,7 +61,9 @@ export function AdminQuizzesClient({ initialItems }: { initialItems: any[] }) {
       const s = getSupabase()
       const { data, error: queryError } = await s
         .from('rounds')
-        .select('id,label,status,deadline_at,leagues(name,code),matches(id,kickoff_at,status,result_home,result_away),quizzes(*)')
+        .select(
+          'id,label,status,deadline_at,leagues(name,code),matches(id,kickoff_at,status,result_home,result_away,home_team,away_team,home_team_external_id,away_team_external_id),quizzes(*)',
+        )
         .order('deadline_at', { ascending: false })
         .limit(50)
       if (queryError) throw queryError
@@ -142,7 +152,22 @@ export function AdminQuizzesClient({ initialItems }: { initialItems: any[] }) {
 
       const finished = matchFinished || isFinishedStatus(round.status) || isFinishedStatus(quiz.status)
 
-      return { round, quiz, chipText, finished, image, prize }
+      const sortedMatches = [...matches].sort((a: any, b: any) => {
+        const aTs = a?.kickoff_at ? new Date(a.kickoff_at).getTime() : 0
+        const bTs = b?.kickoff_at ? new Date(b.kickoff_at).getTime() : 0
+        return aTs - bTs
+      })
+      const displayMatch = sortedMatches[0]
+      const primaryMatch = displayMatch
+        ? {
+            homeName: displayMatch.home_team || 'Gospodarze',
+            awayName: displayMatch.away_team || 'Goście',
+            homeLogo: getTeamLogoUrl(displayMatch.home_team_external_id),
+            awayLogo: getTeamLogoUrl(displayMatch.away_team_external_id),
+          }
+        : null
+
+      return { round, quiz, chipText, finished, image, prize, primaryMatch }
     },
     [],
   )
@@ -160,7 +185,7 @@ export function AdminQuizzesClient({ initialItems }: { initialItems: any[] }) {
   }, [items, buildMeta])
 
   const renderCard = (entry: EnrichedRound) => {
-    const { round: r, quiz: q, chipText, image, prize } = entry
+    const { round: r, quiz: q, chipText, image, prize, primaryMatch } = entry
     return (
       <div
         key={r.id}
@@ -173,6 +198,13 @@ export function AdminQuizzesClient({ initialItems }: { initialItems: any[] }) {
             <div className="absolute left-3 top-3 flex items-center gap-1 rounded-full bg-black/70 px-2 py-1 text-[11px] text-white backdrop-blur-sm">
               <Timer className="h-3.5 w-3.5" /> {chipText}
             </div>
+            {primaryMatch && (
+              <div className="absolute inset-x-2 bottom-3 flex items-center justify-between rounded-2xl border border-white/10 bg-black/60 px-3 py-2 text-white backdrop-blur">
+                <TeamPreview name={primaryMatch.homeName} logo={primaryMatch.homeLogo} align="left" />
+                <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/70">vs</span>
+                <TeamPreview name={primaryMatch.awayName} logo={primaryMatch.awayLogo} align="right" />
+              </div>
+            )}
             <div className="pointer-events-none absolute inset-y-0 right-0 w-40 bg-gradient-to-r from-transparent to-[#7a1313] opacity-95" />
           </div>
           <div className="relative flex flex-1 flex-col items-end justify-center p-5 text-right sm:p-6">
@@ -256,6 +288,35 @@ export function AdminQuizzesClient({ initialItems }: { initialItems: any[] }) {
           {renderGrid(partitioned.finished, 'Brak zakończonych wiktoryn.')}
         </TabsContent>
       </Tabs>
+    </div>
+  )
+}
+
+function TeamPreview({
+  name,
+  logo,
+  align,
+}: {
+  name: string
+  logo: string | null
+  align: 'left' | 'right'
+}) {
+  return (
+    <div
+      className={cn(
+        'flex items-center gap-2 max-w-[45%]',
+        align === 'right' ? 'flex-row-reverse text-right' : 'text-left',
+      )}
+    >
+      {logo ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={logo} alt={name} className="h-8 w-8 rounded-full object-cover" />
+      ) : (
+        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20 text-xs font-semibold text-white">
+          {name.charAt(0)}
+        </div>
+      )}
+      <span className="text-xs font-semibold leading-tight text-white line-clamp-1">{name}</span>
     </div>
   )
 }

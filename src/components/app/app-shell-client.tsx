@@ -123,7 +123,7 @@ export function AppShellClient({ children, initialAuth }: AppShellClientProps) {
       await s.auth.signOut()
     } catch {}
     try {
-      await fetch('/auth/callback', {
+      await fetch('/api/auth/callback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

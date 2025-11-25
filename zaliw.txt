@@ -1,4 +1,4 @@
-rsync -az --delete --exclude ".next" --exclude "node_modules" \
+rsync -az --delete --exclude ".next" --exclude "node_modules" --exclude ".env.local" \
   "/Users/oleksiizhyvotivskyi/Desktop/quiz-gra/" \
   root@45.148.244.75:/home/bugsy/quiz-time.pl/
 
@@ -17,6 +17,9 @@ ssh root@45.148.244.75 '
       . ./.env
       set +a
     fi
+
+    # safety: make sure dev-only env never lives on the server
+    rm -f .env.local
 
     # nvm / node 22
     [ -s ~/.nvm/nvm.sh ] && . ~/.nvm/nvm.sh && nvm use 22.20.0 >/dev/null
@@ -44,8 +47,9 @@ ssh root@45.148.244.75 '
 
 проверка логов 
 
-
 ssh root@45.148.244.75
+ClqVVFoUW0mMxfLbq6
+
 su - bugsy
 pm2 list
 pm2 logs ws-listener

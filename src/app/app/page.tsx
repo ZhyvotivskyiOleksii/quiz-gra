@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowRight, BrainCircuit, CalendarDays, CheckCircle2, Clock } from 'lucide-react'
+import { ArrowRight, BrainCircuit, Trophy } from 'lucide-react'
 import Image from 'next/image'
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
@@ -20,6 +20,7 @@ type MonthlyResultRow = {
   user_id: string | null
   rank: number | null
   prize_awarded?: number | null
+  points?: number | null
 }
 
 type MonthlySubmissionRow = {
@@ -37,6 +38,13 @@ type StatCard = {
   delta: string
   img: string
   alt: string
+}
+
+type PlayerStats = {
+  userId: string
+  displayName: string
+  wins: number
+  totalPoints: number
 }
 
 export default async function AppDashboard() {
@@ -84,7 +92,7 @@ export default async function AppDashboard() {
 
   const { data: monthlyResults = [] } = await supabase
     .from('quiz_results')
-    .select('user_id,rank,prize_awarded')
+    .select('user_id,rank,prize_awarded,points')
     .gte('submitted_at', monthStart.toISOString())
 
   const { data: monthlySubmissions = [] } = await supabase
@@ -115,30 +123,31 @@ export default async function AppDashboard() {
     })
   }
 
-  const winsMap = new Map<
-    string,
-    {
-      userId: string
-      displayName: string
-      wins: number
-    }
-  >()
+  const playerStatsMap = new Map<string, PlayerStats>()
 
   ;(monthlyResults as MonthlyResultRow[] | null)?.forEach((row) => {
     if (!row?.user_id) return
-    const earnedPrize = row.prize_awarded && Number(row.prize_awarded) > 0
-    const isRankWinner = row.rank === 1
-    if (!earnedPrize && !isRankWinner) return
     const displayName = profileNameMap.get(row.user_id) || `Gracz ${row.user_id.slice(0, 6)}`
-    const current = winsMap.get(row.user_id) || { userId: row.user_id, displayName, wins: 0 }
-    current.wins += 1
-    winsMap.set(row.user_id, current)
+    const current =
+      playerStatsMap.get(row.user_id) || ({ userId: row.user_id, displayName, wins: 0, totalPoints: 0 } as PlayerStats)
+    current.totalPoints += row.points ?? 0
+    if ((row.prize_awarded ?? 0) > 0 || row.rank === 1) {
+      current.wins += 1
+    }
+    playerStatsMap.set(row.user_id, current)
   })
 
-  const allWinners = Array.from(winsMap.values())
-  const sortedWinners = [...allWinners].sort((a, b) => b.wins - a.wins)
+  const allPlayerStats = Array.from(playerStatsMap.values())
+  const playersWithPoints = allPlayerStats
+    .filter((stat) => stat.totalPoints > 0)
+    .sort((a, b) => b.totalPoints - a.totalPoints || b.wins - a.wins)
+
+  const sortedWinners = allPlayerStats
+    .filter((stat) => stat.wins > 0)
+    .sort((a, b) => b.wins - a.wins || b.totalPoints - a.totalPoints)
   const totalWins = sortedWinners.reduce((sum, row) => sum + row.wins, 0)
-  const leaderboard = sortedWinners.slice(0, 10)
+  const leaderboard = allPlayerStats.slice(0, 10)
+  const topPlayers = playersWithPoints
   const userRankPosition = sortedWinners.findIndex((row) => row.userId === session.user.id)
   const userRank = userRankPosition >= 0 ? userRankPosition + 1 : null
 
@@ -230,23 +239,49 @@ export default async function AppDashboard() {
         </Card>
 
         <Card className="shadow-xl shadow-black/10">
-          <CardHeader>
-            <CardTitle>Na dziś</CardTitle>
-            <CardDescription>Co możesz zrobić teraz</CardDescription>
+          <CardHeader className="flex flex-col gap-1">
+            <CardTitle>Top gracze</CardTitle>
+            <CardDescription>Wszyscy z dodatnimi punktami w {monthLabel}</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-2">
-            <div className="flex items-center gap-3 rounded-lg bg-card px-3 py-2 shadow-md shadow-black/10 transition-shadow hover:shadow-lg">
-              <CheckCircle2 className="h-4 w-4 text-primary" />
-              Przejdź szybki quiz z 6 pytań
-            </div>
-            <div className="flex items-center gap-3 rounded-lg bg-card px-3 py-2 shadow-md shadow-black/10 transition-shadow hover:shadow-lg">
-              <CalendarDays className="h-4 w-4 text-primary" />
-              Dodaj przypomnienie o codziennym wyzwaniu
-            </div>
-            <div className="flex items-center gap-3 rounded-lg bg-card px-3 py-2 shadow-md shadow-black/10 transition-shadow hover:shadow-lg">
-              <Clock className="h-4 w-4 text-primary" />
-              Zobacz prognozowane pytania oczekujące na wynik
-            </div>
+          <CardContent>
+            {topPlayers.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Brak wyników. Zagraj w SuperGame i zdobądź podium!</p>
+            ) : (
+              <div className="space-y-3">
+                {topPlayers.map((player, index) => (
+                  <div
+                    key={player.userId}
+                    className="relative overflow-hidden rounded-xl border border-white/5 bg-card/80 px-3 py-2 shadow-md shadow-black/10 transition-shadow hover:shadow-lg"
+                  >
+                    <div className="pointer-events-none absolute inset-0 opacity-20">
+                      <Image
+                        src="/icon/eagle-mascot.webp"
+                        alt=""
+                        fill
+                        className="object-cover"
+                        sizes="200px"
+                      />
+                    </div>
+                    <div className="relative flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/15 text-sm font-semibold text-primary">
+                          #{index + 1}
+                        </div>
+                        <div>
+                          <div className="font-medium leading-tight text-white">{player.displayName}</div>
+                          <p className="text-xs text-muted-foreground">
+                            Punkty: {player.totalPoints.toLocaleString('pl-PL')} • Wygrane: {player.wins.toLocaleString('pl-PL')}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 text-sm font-semibold text-primary">
+                        <Trophy className="h-4 w-4" /> {player.totalPoints.toLocaleString('pl-PL')}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -255,27 +290,29 @@ export default async function AppDashboard() {
         <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <CardTitle>Ranking miesiąca</CardTitle>
-            <CardDescription>Zwycięstwa w {monthLabel}</CardDescription>
+            <CardDescription>Top 10 graczy aktywnych w {monthLabel}</CardDescription>
           </div>
           <div className="text-sm text-muted-foreground">
             Aktywni gracze: {participantsSet.size.toLocaleString('pl-PL')} • Łącznie zwycięstw: {totalWins.toLocaleString('pl-PL')}
           </div>
         </CardHeader>
         <CardContent>
-          {leaderboard.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Brak zwycięstw w tym miesiącu. Bądź pierwszy!</p>
+          {allPlayerStats.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Brak aktywności w tym miesiącu. Zagraj pierwszy!</p>
           ) : (
             <div className="space-y-3">
-              {leaderboard.map((row, index) => (
+              {allPlayerStats.slice(0, 10).map((row, index) => (
                 <div key={row.userId} className="flex items-center justify-between rounded-lg border border-white/5 bg-card px-4 py-2">
                   <div className="flex items-center gap-3">
                     <span className="text-sm font-semibold text-white/80">#{index + 1}</span>
                     <div>
                       <div className="font-medium text-white">{row.displayName}</div>
-                      <div className="text-xs text-muted-foreground">Wygrane: {row.wins}</div>
+                      <div className="text-xs text-muted-foreground">
+                        Punkty: {row.totalPoints.toLocaleString('pl-PL')} • Wygrane: {row.wins.toLocaleString('pl-PL')}
+                      </div>
                     </div>
                   </div>
-                  <span className="text-sm font-semibold text-primary">{row.wins.toLocaleString('pl-PL')}</span>
+                  <span className="text-sm font-semibold text-primary">{row.totalPoints.toLocaleString('pl-PL')}</span>
                 </div>
               ))}
             </div>

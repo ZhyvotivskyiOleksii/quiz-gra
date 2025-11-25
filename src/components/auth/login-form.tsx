@@ -200,7 +200,7 @@ export function LoginForm({
         
         // Sync session to server cookies
         try {
-          await fetch('/auth/callback', {
+          await fetch('/api/auth/callback', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
@@ -299,7 +299,7 @@ export function LoginForm({
         // Sync session to server cookies
         try {
           if (data.session) {
-            await fetch('/auth/callback', {
+            await fetch('/api/auth/callback', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               credentials: 'include',
@@ -450,7 +450,7 @@ export function LoginForm({
       try {
         const session = (data as any)?.session
         if (session) {
-          await fetch('/auth/callback', {
+          await fetch('/api/auth/callback', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
@@ -747,6 +747,7 @@ export function LoginForm({
                   provider: 'google',
                   options: {
                     redirectTo: `${origin}/auth/callback`,
+                    flowType: 'pkce',
                     queryParams: {
                       prompt: 'select_account',
                     },

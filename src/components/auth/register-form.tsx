@@ -220,7 +220,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
         const supaSession = await supabase.auth.getSession()
         const sessionPayload = supaSession.data.session ?? data?.session
         if (sessionPayload) {
-          await fetch('/auth/callback', {
+          await fetch('/api/auth/callback', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',

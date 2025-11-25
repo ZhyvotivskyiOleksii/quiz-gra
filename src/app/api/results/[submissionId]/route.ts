@@ -3,9 +3,9 @@ import { createServerSupabaseClient } from '@/lib/createServerSupabase'
 
 export async function GET(
   _request: Request,
-  { params }: { params: { submissionId: string } },
+  context: { params: Promise<{ submissionId: string }> },
 ) {
-  const submissionId = params.submissionId
+  const { submissionId } = await context.params
   if (!submissionId) {
     return NextResponse.json({ error: 'Missing submission id' }, { status: 400 })
   }
