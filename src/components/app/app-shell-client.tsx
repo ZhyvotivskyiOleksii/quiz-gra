@@ -17,12 +17,21 @@ import {
 import { Play, History, LogOut, Settings as SettingsIcon, LayoutDashboard, Shield, Trophy, Info } from 'lucide-react'
 import { usePathname, useRouter } from 'next/navigation'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { getSupabase } from '@/lib/supabaseClient'
 import { Header } from '@/components/shared/header'
-import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { LoaderOverlay } from '@/components/ui/pitch-loader'
-import { AuthProvider, useAuth } from '@/components/app/auth-context'
-import { InitialAuthState } from '@/types/auth'
+
+export type InitialAuthState = {
+  email?: string
+  avatarUrl?: string
+  displayName?: string
+  shortId?: string | null
+  isAdmin?: boolean
+  needsPhone?: boolean
+  walletBalance?: number | null
+  hasSession?: boolean
+}
 
 type AppShellClientProps = {
   children: React.ReactNode
@@ -30,73 +39,109 @@ type AppShellClientProps = {
 }
 
 export function AppShellClient({ children, initialAuth }: AppShellClientProps) {
-  return (
-    <AuthProvider initialAuth={initialAuth}>
-      <ShellLayout>{children}</ShellLayout>
-    </AuthProvider>
-  )
-}
-
-function ShellLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const isMobile = useIsMobile()
-  const { needsPhone, isAdmin, loading, logout, status, refresh, initialized } = useAuth()
 
+  const [userEmail, setUserEmail] = React.useState<string | undefined>(initialAuth.email)
+  const [avatarUrl, setAvatarUrl] = React.useState<string | undefined>(initialAuth.avatarUrl || undefined)
+  const [displayName, setDisplayName] = React.useState<string | undefined>(initialAuth.displayName || undefined)
+  const [needsPhone, setNeedsPhone] = React.useState<boolean>(initialAuth.needsPhone ?? false)
+  const [isAdmin, setIsAdmin] = React.useState<boolean>(initialAuth.isAdmin ?? false)
+  const [bootstrapping, setBootstrapping] = React.useState(true)
   const [routeLoading, setRouteLoading] = React.useState(false)
-  const [showRouteSpinner, setShowRouteSpinner] = React.useState(false)
-  const previousPathRef = React.useRef(pathname)
 
-  const menuItems = React.useMemo(
-    () => [
-      { href: '/app', label: 'Panel', icon: LayoutDashboard },
-      { href: '/app/play', label: 'SuperGame', icon: Play },
-      { href: '/app/history', label: 'Historia', icon: History },
-      { href: '/app/info', label: 'Info', icon: Info },
-      { href: '/app/results', label: 'Wyniki', icon: Trophy },
-    ],
-    [],
-  )
+  React.useEffect(() => {
+    const supabase = getSupabase()
 
-  const handleNavigate = React.useCallback(
-    (href: string) => {
-      if (href === pathname) return
-      setRouteLoading(true)
-      router.push(href)
-    },
-    [pathname, router],
-  )
+    async function hydrate(user: any | null) {
+      if (!user) {
+        setUserEmail(undefined)
+        setAvatarUrl(undefined)
+        setDisplayName(undefined)
+        setIsAdmin(false)
+        setNeedsPhone(false)
+        return
+      }
+      const emailFromUser =
+        user.email ??
+        (user.user_metadata?.email as string | undefined) ??
+        ((user.user_metadata as any)?.contact_email as string | undefined)
+      setUserEmail(emailFromUser)
 
-  const handleLogout = React.useCallback(async () => {
-    await logout()
+      const viaProvider = (user.user_metadata?.avatar_url || user.user_metadata?.picture) as string | undefined
+      setAvatarUrl((prev) => prev ?? viaProvider)
+
+      const fn = (user.user_metadata?.first_name as string | undefined) || ''
+      const ln = (user.user_metadata?.last_name as string | undefined) || ''
+      const fallbackName = `${fn} ${ln}`.trim() || (emailFromUser?.split('@')[0] ?? 'User')
+      setDisplayName((prev) => prev ?? fallbackName)
+
+      const hasPhone =
+        Boolean((user as any).phone) || Boolean((user.user_metadata as any)?.phone)
+      const phoneConfirmed =
+        Boolean((user as any).phone_confirmed_at) || Boolean((user.user_metadata as any)?.phone_confirmed_at)
+      setNeedsPhone(!hasPhone || !phoneConfirmed)
+    }
+
+    ;(async () => {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+        await hydrate(user)
+      } finally {
+        setBootstrapping(false)
+      }
+    })()
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_evt, session) => {
+      hydrate(session?.user ?? null)
+    })
+    return () => {
+      sub.subscription.unsubscribe()
+    }
+  }, [])
+
+  const menuItems = [
+    { href: '/app', label: 'Panel', icon: LayoutDashboard },
+    { href: '/app/play', label: 'SuperGame', icon: Play },
+    { href: '/app/history', label: 'Historia', icon: History },
+    { href: '/app/info', label: 'Info', icon: Info },
+    { href: '/app/results', label: 'Wyniki', icon: Trophy },
+  ]
+
+  const handleNavigate = (href: string) => {
+    if (href === pathname) return
+    setRouteLoading(true)
+    router.push(href)
+  }
+
+  const handleLogout = async () => {
+    const s = getSupabase()
+    try {
+      await s.auth.signOut()
+    } catch {}
+    try {
+      await fetch('/auth/callback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ event: 'SIGNED_OUT' }),
+      })
+    } catch {}
     router.push('/')
-  }, [logout, router])
+  }
 
-  const getActiveState = React.useCallback(
-    (itemHref: string) => {
-      if (!pathname) return false
-      if (itemHref === '/app') return pathname === '/app'
-      return pathname.startsWith(itemHref)
-    },
-    [pathname],
-  )
+  const getActiveState = (itemHref: string) => {
+    if (!pathname) return false
+    if (itemHref === '/app') return pathname === '/app'
+    return pathname.startsWith(itemHref)
+  }
 
   const isPlayScreen = pathname?.startsWith('/app/quizzes/') && pathname?.includes('/play')
   const defaultPaddingX = 'px-3 sm:px-5 md:px-7 lg:px-10 xl:px-16'
-  const loaderMessage = loading ? 'Ładujemy Twój panel…' : 'Przełączamy widok…'
-
-  React.useEffect(() => {
-    if (status === 'ready' || status === 'anonymous') {
-      setRouteLoading(false)
-    }
-  }, [status])
-
-  React.useEffect(() => {
-    if (loading) return
-    if (status === 'anonymous') {
-      router.push('/')
-    }
-  }, [loading, status, router])
+  const previousPathRef = React.useRef(pathname)
 
   React.useEffect(() => {
     if (previousPathRef.current !== pathname) {
@@ -104,15 +149,6 @@ function ShellLayout({ children }: { children: React.ReactNode }) {
       setRouteLoading(false)
     }
   }, [pathname])
-
-  React.useEffect(() => {
-    if (!routeLoading) {
-      setShowRouteSpinner(false)
-      return
-    }
-    const timer = window.setTimeout(() => setShowRouteSpinner(true), 250)
-    return () => window.clearTimeout(timer)
-  }, [routeLoading])
 
   React.useEffect(() => {
     if (typeof window === 'undefined') return
@@ -133,135 +169,79 @@ function ShellLayout({ children }: { children: React.ReactNode }) {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
   }, [pathname])
 
-  const shouldShowRecoveryScreen = !loading && initialized && (status === 'error' || status === 'anonymous')
-
-  const handleGoToLogin = React.useCallback(() => {
-    router.push('/login')
-  }, [router])
-
-  const handleRetry = React.useCallback(async () => {
-    await refresh()
-  }, [refresh])
-
-  if (shouldShowRecoveryScreen) {
-    const variant: 'error' | 'anonymous' = status === 'error' ? 'error' : 'anonymous'
-    return (
-      <>
-        <LoaderOverlay show={loading || showRouteSpinner} message={loaderMessage} />
-        <AuthRecoveryScreen
-          variant={variant}
-          onRetry={handleRetry}
-          onLogin={handleGoToLogin}
-          retryDisabled={loading}
-        />
-      </>
-    )
-  }
-
   return (
     <>
-      <LoaderOverlay show={loading || showRouteSpinner} message={loaderMessage} />
+      <LoaderOverlay show={bootstrapping || routeLoading} message={routeLoading ? 'Przełączamy widok…' : 'Ładujemy Twój panel…'} />
       <div className="relative min-h-svh w-full overflow-hidden">
         <div className="relative z-10 flex min-h-svh flex-col">
-          <Header />
-          <SidebarProvider>
-            <Sidebar collapsible={isMobile ? 'offcanvas' : 'icon'} className="border-0 bg-transparent sidebar-glass text-white">
-              <SidebarHeader />
-              <SidebarContent className="pt-20 pb-4 flex flex-col">
-                <div className="mx-2 mb-2 rounded-2xl bg-card text-card-foreground border border-border shadow-sm px-4 py-3">
-                  <button
-                    type="button"
-                    onClick={() => handleNavigate('/app')}
-                    className="flex w-full items-center justify-end text-sm font-semibold text-foreground/90 hover:text-foreground"
-                  >
-                    <span className="text-base uppercase tracking-[0.4em] text-white/70">Panel Gracza</span>
-                  </button>
+        <React.Suspense fallback={null}>
+          <Header
+            initialAuth={{
+              email: initialAuth.email,
+              avatarUrl: initialAuth.avatarUrl,
+              displayName: initialAuth.displayName,
+              shortId: initialAuth.shortId ?? undefined,
+              isAdmin: initialAuth.isAdmin,
+              walletBalance: initialAuth.walletBalance ?? null,
+              hasSession: initialAuth.hasSession,
+            }}
+          />
+        </React.Suspense>
+        <SidebarProvider>
+          <Sidebar collapsible={isMobile ? 'offcanvas' : 'icon'} className="border-0 bg-transparent sidebar-glass text-white">
+            <SidebarHeader />
+            <SidebarContent className="pt-20 pb-4 flex flex-col">
+              <div className="mx-2 mb-2 rounded-2xl bg-card text-card-foreground border border-border shadow-sm px-4 py-3">
+                <button
+                  type="button"
+                  onClick={() => handleNavigate('/app')}
+                  className="flex w-full items-center justify-end text-sm font-semibold text-foreground/90 hover:text-foreground"
+                >
+                  <span className="text-base uppercase tracking-[0.4em] text-white/70">Panel Gracza</span>
+                </button>
+              </div>
+
+              <div className="mx-2 rounded-2xl p-2 flex flex-col flex-1">
+                <PlayerSidebarNav
+                  menuItems={menuItems}
+                  isAdmin={isAdmin}
+                  needsPhone={needsPhone}
+                  handleNavigate={handleNavigate}
+                  handleLogout={handleLogout}
+                  getActiveState={getActiveState}
+                />
+              </div>
+            </SidebarContent>
+            <SidebarFooter className="border-0 p-2 text-xs text-white/60">
+              <div className="flex items-center gap-4 rounded-3xl border border-white/10 bg-gradient-to-br from-white/10 to-white/[0.02] px-4 py-3 shadow-[0_18px_45px_rgba(3,4,12,0.45)]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/icon/support.svg"
+                  alt="Support"
+                  className="h-8 w-8 rounded-full border border-white/30 bg-gradient-to-br from-[#f97316] via-[#fb7185] to-[#8b5cf6] p-1 shadow-[0_12px_28px_rgba(249,113,22,0.35)]"
+                />
+                <div className="flex flex-col leading-tight text-left">
+                  <p className="text-[13px] font-semibold text-white">Obsługa 24/7</p>
+                  <p className="text-[11px] text-white/70 tracking-wide">support@quiz-time.pl</p>
                 </div>
-
-                <div className="mx-2 rounded-2xl p-2 flex flex-col flex-1">
-                  <PlayerSidebarNav
-                    menuItems={menuItems}
-                    isAdmin={isAdmin}
-                    needsPhone={needsPhone}
-                    handleNavigate={handleNavigate}
-                    handleLogout={handleLogout}
-                    getActiveState={getActiveState}
-                  />
-                </div>
-              </SidebarContent>
-
-              <SidebarFooter className="border-0 p-2 text-xs text-white/60">
-                <div className="flex items-center gap-4 rounded-3xl border border-white/10 bg-gradient-to-br from-white/10 to-white/[0.02] px-4 py-3 shadow-[0_18px_45px_rgba(3,4,12,0.45)]">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src="/icon/support.svg"
-                    alt="Support"
-                    className="h-8 w-8 rounded-full border border-white/30 bg-gradient-to-br from-[#f97316] via-[#fb7185] to-[#8b5cf6] p-1 shadow-[0_12px_28px_rgba(249,113,22,0.35)]"
-                  />
-                  <div className="flex flex-col leading-tight text-left">
-                    <p className="text-[13px] font-semibold text-white">Obsługa 24/7</p>
-                    <p className="text-[11px] text-white/70 tracking-wide">support@quiz-time.pl</p>
-                  </div>
-                </div>
-              </SidebarFooter>
-            </Sidebar>
-
-            <SidebarInset className="relative bg-transparent">
-              <SidebarTrigger
-                className="fixed left-4 top-[88px] z-30 flex h-11 w-11 items-center justify-center rounded-2xl border border-white/20 bg-black/40 text-white shadow-[0_15px_35px_rgba(3,2,12,0.55)] backdrop-blur-md sm:hidden"
-                aria-label="Otwórz menu"
-              />
-              <main className={cn('flex-1 overflow-auto py-8', isPlayScreen ? 'px-0' : defaultPaddingX)}>
-                <div className={cn('relative z-10 mx-auto w-full', isPlayScreen ? 'max-w-[1400px]' : 'max-w-[1500px]')}>
-                  {children}
-                </div>
-              </main>
-            </SidebarInset>
-          </SidebarProvider>
-        </div>
-      </div>
-    </>
-  )
-}
-
-type AuthRecoveryScreenProps = {
-  variant: 'error' | 'anonymous'
-  onRetry: () => Promise<void> | void
-  onLogin: () => void
-  retryDisabled?: boolean
-}
-
-function AuthRecoveryScreen({ variant, onRetry, onLogin, retryDisabled }: AuthRecoveryScreenProps) {
-  const isError = variant === 'error'
-  const title = isError ? 'Nie udało się odświeżyć sesji' : 'Twoja sesja wygasła'
-  const description = isError
-    ? 'Supabase nie odpowiedziało na czas. Spróbuj jeszcze raz albo zaloguj się ponownie.'
-    : 'Wylogowaliśmy Cię dla bezpieczeństwa. Kliknij przycisk, aby przejść do logowania.'
-  return (
-    <div className="flex min-h-svh flex-col items-center justify-center gap-8 bg-gradient-to-br from-[#05010d] via-[#0b031c] to-[#12062c] px-6 py-12 text-center text-white">
-      <div className="space-y-4 max-w-md">
-        <p className="text-xs uppercase tracking-[0.5em] text-white/60">Panel gracza</p>
-        <h1 className="text-2xl font-headline font-black">{title}</h1>
-        <p className="text-sm leading-relaxed text-white/70">{description}</p>
-      </div>
-      <div className="flex flex-col gap-3 sm:flex-row">
-        {isError && (
-          <Button onClick={onRetry} disabled={retryDisabled} className="h-11 min-w-[180px] rounded-xl font-semibold">
-            Spróbuj ponownie
-          </Button>
-        )}
-        <Button
-          variant={isError ? 'secondary' : 'default'}
-          onClick={onLogin}
-          className={cn(
-            'h-11 min-w-[180px] rounded-xl font-semibold',
-            isError ? 'border border-white/30 bg-white/10 text-white hover:bg-white/20' : '',
-          )}
-        >
-          Przejdź do logowania
-        </Button>
+              </div>
+            </SidebarFooter>
+          </Sidebar>
+          <SidebarInset className="relative bg-transparent">
+            <SidebarTrigger
+              className="fixed left-4 top-[88px] z-30 flex h-11 w-11 items-center justify-center rounded-2xl border border-white/20 bg-black/40 text-white shadow-[0_15px_35px_rgba(3,2,12,0.55)] backdrop-blur-md sm:hidden"
+              aria-label="Otwórz menu"
+            />
+            <main className={cn('flex-1 overflow-auto py-8', isPlayScreen ? 'px-0' : defaultPaddingX)}>
+              <div className={cn('relative z-10 mx-auto w-full', isPlayScreen ? 'max-w-[1400px]' : 'max-w-[1500px]')}>
+                {children}
+              </div>
+            </main>
+          </SidebarInset>
+        </SidebarProvider>
       </div>
     </div>
+    </>
   )
 }
 
@@ -321,7 +301,6 @@ function PlayerSidebarNav({
           </SidebarMenuItem>
         ))}
       </SidebarMenu>
-
       <SidebarMenu className="mt-auto pt-4 pb-[60px] space-y-2">
         {isAdmin && (
           <SidebarMenuItem>
@@ -338,7 +317,6 @@ function PlayerSidebarNav({
             </SidebarMenuButton>
           </SidebarMenuItem>
         )}
-
         <SidebarMenuItem>
           <SidebarMenuButton
             onClick={() => navigateAndClose('/app/settings?tab=phone')}
@@ -365,7 +343,6 @@ function PlayerSidebarNav({
             )}
           </SidebarMenuButton>
         </SidebarMenuItem>
-
         <SidebarMenuItem>
           <SidebarMenuButton
             onClick={logoutAndClose}

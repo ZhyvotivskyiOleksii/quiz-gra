@@ -23,7 +23,6 @@ import {
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu'
 import { performClientLogout } from '@/lib/logout-client'
-import { useAuthOptional } from '@/components/app/auth-context'
 
 export type HeaderInitialAuth = {
   email?: string
@@ -42,40 +41,14 @@ type HeaderProps = {
 export function Header({ initialAuth }: HeaderProps = {}) {
   const router = useRouter()
   const pathname = usePathname()
-  const auth = useAuthOptional()
-
-  // ⚠️ ВАЖНО:
-  // если уже есть auth из контекста — используем ТОЛЬКО его,
-  // initialAuth нужен только до гидрации (когда auth === undefined)
-  const useContextAuth = Boolean(auth)
-
-  const email = useContextAuth ? auth?.email : initialAuth?.email
-  const avatarUrl = useContextAuth ? auth?.avatarUrl : initialAuth?.avatarUrl
-  const displayName =
-    (useContextAuth ? auth?.displayName : initialAuth?.displayName) ??
-    (email ? email.split('@')[0] : undefined)
-
-  const shortId = useContextAuth
-    ? auth?.shortId
-    : initialAuth?.shortId
-    ? String(initialAuth.shortId)
-    : undefined
-
-  const walletBalance = useContextAuth
-    ? typeof auth?.walletBalance === 'number'
-      ? auth.walletBalance
-      : null
-    : typeof initialAuth?.walletBalance === 'number'
-    ? initialAuth.walletBalance
-    : null
-
-  const isAdmin = useContextAuth
-    ? Boolean(auth?.isAdmin)
-    : Boolean(initialAuth?.isAdmin)
-
-  const hasSession = useContextAuth
-    ? Boolean(auth?.hasSession)
-    : Boolean(initialAuth?.hasSession ?? initialAuth?.email)
+  const email = initialAuth?.email
+  const avatarUrl = initialAuth?.avatarUrl
+  const displayName = initialAuth?.displayName ?? (email ? email.split('@')[0] : undefined)
+  const shortId = initialAuth?.shortId ? String(initialAuth.shortId) : undefined
+  const walletBalance =
+    typeof initialAuth?.walletBalance === 'number' ? initialAuth.walletBalance : null
+  const isAdmin = Boolean(initialAuth?.isAdmin)
+  const hasSession = Boolean(initialAuth?.hasSession ?? initialAuth?.email)
 
   const formattedBalance = React.useMemo(() => {
     if (walletBalance === null || walletBalance === undefined) return null
@@ -93,20 +66,13 @@ export function Header({ initialAuth }: HeaderProps = {}) {
     return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase()
   }, [displayName, email])
 
-  const handleLogout = React.useCallback(
-    async () => {
-      try {
-        if (auth) {
-          await auth.logout()
-        } else {
-          await performClientLogout()
-        }
-      } finally {
-        router.replace('/')
-      }
-    },
-    [auth, router],
-  )
+  const handleLogout = React.useCallback(async () => {
+    try {
+      await performClientLogout()
+    } finally {
+      router.replace('/')
+    }
+  }, [router])
 
   const goTo = React.useCallback(
     (target: string) => {
