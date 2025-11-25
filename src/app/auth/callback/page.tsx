@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 import { getSupabase } from '@/lib/supabaseClient'
@@ -8,6 +8,21 @@ import { getSupabase } from '@/lib/supabaseClient'
 type Status = 'exchanging' | 'syncing' | 'done' | 'error'
 
 export default function AuthCallbackPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-svh flex flex-col items-center justify-center gap-4 bg-gradient-to-br from-[#05010d] via-[#0b031c] to-[#12062c] px-6 text-center text-white">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm text-white/80">Kończymy logowanie...</p>
+        </div>
+      }
+    >
+      <AuthCallbackInner />
+    </Suspense>
+  )
+}
+
+function AuthCallbackInner() {
   const router = useRouter()
   const params = useSearchParams()
   const [status, setStatus] = useState<Status>('exchanging')
