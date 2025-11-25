@@ -6,6 +6,7 @@ import Image from 'next/image'
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
+import { createClient } from '@supabase/supabase-js'
 import { cn } from '@/lib/utils'
 
 type UserResultRow = {
@@ -90,31 +91,35 @@ export default async function AppDashboard() {
   const weeklyAttempts = submissions.filter((s) => s.created_at && new Date(s.created_at) >= weekAgo).length
   const recentResults = userResults.slice(0, 4)
 
-  const { data: monthlyResults = [] } = await supabase
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!serviceKey) {
+    throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY')
+  }
+  const serviceSupabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
+
+  const { data: globalResults = [] } = await serviceSupabase
     .from('quiz_results')
     .select('user_id,rank,prize_awarded,points')
-    .gte('submitted_at', monthStart.toISOString())
 
-  const { data: monthlySubmissions = [] } = await supabase
-    .from('quiz_submissions')
-    .select('user_id')
-    .gte('submitted_at', monthStart.toISOString())
+  const { data: allSubmissions = [] } = await serviceSupabase.from('quiz_submissions').select('user_id')
 
   const participantsSet = new Set<string>()
-  ;(monthlySubmissions as MonthlySubmissionRow[]).forEach((row) => {
+  ;(allSubmissions as MonthlySubmissionRow[]).forEach((row) => {
     if (!row?.user_id) return
     participantsSet.add(row.user_id)
   })
 
   const profileIds = new Set<string>()
-  ;(monthlyResults as MonthlyResultRow[]).forEach((row) => {
+  ;(globalResults as MonthlyResultRow[]).forEach((row) => {
     if (!row?.user_id) return
     profileIds.add(row.user_id)
   })
 
   const profileNameMap = new Map<string, string>()
   if (profileIds.size > 0) {
-    const { data: profileRows = [] } = (await supabase
+    const { data: profileRows = [] } = (await serviceSupabase
       .from('profiles')
       .select('id,display_name')
       .in('id', Array.from(profileIds))) as { data: ProfileRow[] }
@@ -125,7 +130,7 @@ export default async function AppDashboard() {
 
   const playerStatsMap = new Map<string, PlayerStats>()
 
-  ;(monthlyResults as MonthlyResultRow[] | null)?.forEach((row) => {
+  ;(globalResults as MonthlyResultRow[] | null)?.forEach((row) => {
     if (!row?.user_id) return
     const displayName = profileNameMap.get(row.user_id) || `Gracz ${row.user_id.slice(0, 6)}`
     const current =
@@ -138,17 +143,12 @@ export default async function AppDashboard() {
   })
 
   const allPlayerStats = Array.from(playerStatsMap.values())
-  const playersWithPoints = allPlayerStats
-    .filter((stat) => stat.totalPoints > 0)
-    .sort((a, b) => b.totalPoints - a.totalPoints || b.wins - a.wins)
+  const sortedPlayers = [...allPlayerStats].sort((a, b) => b.totalPoints - a.totalPoints || b.wins - a.wins)
 
-  const sortedWinners = allPlayerStats
-    .filter((stat) => stat.wins > 0)
-    .sort((a, b) => b.wins - a.wins || b.totalPoints - a.totalPoints)
-  const totalWins = sortedWinners.reduce((sum, row) => sum + row.wins, 0)
-  const leaderboard = allPlayerStats.slice(0, 10)
-  const topPlayers = playersWithPoints
-  const userRankPosition = sortedWinners.findIndex((row) => row.userId === session.user.id)
+  const totalWins = sortedPlayers.reduce((sum, row) => sum + row.wins, 0)
+  const leaderboard = sortedPlayers.slice(0, 10)
+  const topPlayers = sortedPlayers
+  const userRankPosition = sortedPlayers.findIndex((row) => row.userId === session.user.id)
   const userRank = userRankPosition >= 0 ? userRankPosition + 1 : null
 
   const statCards = getStatCards(
@@ -238,17 +238,26 @@ export default async function AppDashboard() {
           </CardContent>
         </Card>
 
-        <Card className="shadow-xl shadow-black/10">
-          <CardHeader className="flex flex-col gap-1">
+  <Card className="shadow-xl shadow-black/10 relative overflow-hidden">
+          <div className="pointer-events-none absolute inset-0 opacity-15">
+            <Image
+              src="/icon/eagle-mascot.webp"
+              alt=""
+              fill
+              sizes="400px"
+              className="object-cover"
+            />
+          </div>
+          <CardHeader className="relative flex flex-col gap-1">
             <CardTitle>Top gracze</CardTitle>
-            <CardDescription>Wszyscy z dodatnimi punktami w {monthLabel}</CardDescription>
+            <CardDescription>Wszyscy, którzy grali w QuizTime</CardDescription>
           </CardHeader>
-          <CardContent>
-            {topPlayers.length === 0 ? (
+          <CardContent className="relative">
+          {topPlayers.length === 0 ? (
               <p className="text-sm text-muted-foreground">Brak wyników. Zagraj w SuperGame i zdobądź podium!</p>
             ) : (
               <div className="space-y-3">
-                {topPlayers.map((player, index) => (
+                {topPlayers.slice(0, 5).map((player, index) => (
                   <div
                     key={player.userId}
                     className="relative overflow-hidden rounded-xl border border-white/5 bg-card/80 px-3 py-2 shadow-md shadow-black/10 transition-shadow hover:shadow-lg"
@@ -290,7 +299,7 @@ export default async function AppDashboard() {
         <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <CardTitle>Ranking miesiąca</CardTitle>
-            <CardDescription>Top 10 graczy aktywnych w {monthLabel}</CardDescription>
+            <CardDescription>Top 10 graczy w historii QuizTime</CardDescription>
           </div>
           <div className="text-sm text-muted-foreground">
             Aktywni gracze: {participantsSet.size.toLocaleString('pl-PL')} • Łącznie zwycięstw: {totalWins.toLocaleString('pl-PL')}
