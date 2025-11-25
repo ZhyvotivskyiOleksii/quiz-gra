@@ -2,6 +2,8 @@ import Image from 'next/image'
 import { Timer } from 'lucide-react'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
+import { getTeamLogoUrl } from '@/lib/footballApi'
+import { cn } from '@/lib/utils'
 import BonusInfoPanel, { BonusQuizSummary } from '@/components/app/bonus-info-panel'
 import { redirect } from 'next/navigation'
 import { QuizActionButton } from '@/components/app/quiz-action-button'
@@ -28,7 +30,9 @@ export default async function PlayPage() {
 
   const { data: rounds } = await supabase
     .from('rounds')
-    .select('id,label,deadline_at,leagues(name,code),matches(kickoff_at),quizzes(*)')
+    .select(
+      'id,label,deadline_at,leagues(name,code),matches(kickoff_at,home_team,away_team,home_team_external_id,away_team_external_id),quizzes(*)',
+    )
     .neq('status','draft')
     .order('deadline_at',{ ascending: true })
     .limit(8)
@@ -151,11 +155,27 @@ export default async function PlayPage() {
               const img = q.image_url || '/images/preview.webp'
               const prize = q.prize
               const deadlineTs = new Date(r.deadline_at).getTime()
-              const matchKickoffs = Array.isArray(r.matches)
-                ? r.matches
-                    .map((m: any) => (m?.kickoff_at ? new Date(m.kickoff_at).getTime() : NaN))
-                    .filter((ts): ts is number => typeof ts === 'number' && Number.isFinite(ts))
+              const sortedMatches = Array.isArray(r.matches)
+                ? [...r.matches].sort((a: any, b: any) => {
+                    const aTs = a?.kickoff_at ? new Date(a.kickoff_at).getTime() : 0
+                    const bTs = b?.kickoff_at ? new Date(b.kickoff_at).getTime() : 0
+                    return aTs - bTs
+                  })
                 : []
+              const matchKickoffs = sortedMatches.map((m: any) =>
+                m?.kickoff_at ? new Date(m.kickoff_at).getTime() : NaN,
+              ).filter((ts): ts is number => typeof ts === 'number' && Number.isFinite(ts))
+              const displayMatch = sortedMatches.find(
+                (m: any) => (m?.home_team && m?.away_team) || (m?.home_team_external_id && m?.away_team_external_id),
+              )
+              const matchPreview = displayMatch
+                ? {
+                    homeName: displayMatch.home_team || 'Gospodarze',
+                    awayName: displayMatch.away_team || 'Goście',
+                    homeLogo: getTeamLogoUrl(displayMatch.home_team_external_id),
+                    awayLogo: getTeamLogoUrl(displayMatch.away_team_external_id),
+                  }
+                : null
               const earliestKickoff = matchKickoffs.length ? Math.min(...matchKickoffs) : null
               const now = Date.now()
               const isClosed = Number.isFinite(deadlineTs) ? deadlineTs <= now : false
@@ -183,6 +203,15 @@ export default async function PlayPage() {
                       <div className="absolute top-3 left-3 rounded-full bg-black/70 backdrop-blur-sm text-white text-[11px] px-2 py-1 flex items-center gap-1">
                         <Timer className="h-3.5 w-3.5" /> Koniec za: {formatTimeLeft(r.deadline_at) || '—'}
                       </div>
+                      {matchPreview && (
+                        <div className="absolute inset-x-3 bottom-3 rounded-2xl border border-white/10 bg-black/55 px-3 py-2 text-white backdrop-blur">
+                          <div className="flex items-center justify-between gap-2">
+                            <TeamPreview name={matchPreview.homeName} logo={matchPreview.homeLogo} align="left" />
+                            <span className="text-[10px] font-semibold uppercase tracking-[0.3em] text-white/70">vs</span>
+                            <TeamPreview name={matchPreview.awayName} logo={matchPreview.awayLogo} align="right" />
+                          </div>
+                        </div>
+                      )}
                       <div className="pointer-events-none absolute inset-y-0 right-0 w-40 bg-gradient-to-r from-transparent to-[#7a1313] opacity-95"/>
                     </div>
                     <div className="relative flex-1 p-5 sm:p-6 flex flex-col justify-center items-end text-right">
@@ -227,6 +256,35 @@ export default async function PlayPage() {
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+function TeamPreview({
+  name,
+  logo,
+  align,
+}: {
+  name: string
+  logo: string | null
+  align: 'left' | 'right'
+}) {
+  return (
+    <div
+      className={cn(
+        'flex items-center gap-2 max-w-[45%]',
+        align === 'right' ? 'flex-row-reverse text-right' : 'text-left',
+      )}
+    >
+      {logo ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={logo} alt={name} className="h-7 w-7 rounded-full object-cover" />
+      ) : (
+        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20 text-[11px] font-semibold text-white">
+          {name.charAt(0)}
+        </div>
+      )}
+      <span className="text-[11px] font-semibold leading-tight text-white line-clamp-1">{name}</span>
     </div>
   )
 }
