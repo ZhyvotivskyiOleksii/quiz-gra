@@ -1,30 +1,36 @@
 import Image from 'next/image'
 import { Timer } from 'lucide-react'
+import { cookies } from 'next/headers'
+import { createServerClient } from '@supabase/ssr'
 import BonusInfoPanel, { BonusQuizSummary } from '@/components/app/bonus-info-panel'
 import { redirect } from 'next/navigation'
 import { QuizActionButton } from '@/components/app/quiz-action-button'
-import { getTeamLogoUrl } from '@/lib/footballApi'
-import { cn } from '@/lib/utils'
-import { createServerSupabaseClient } from '@/lib/createServerSupabase'
 
 export default async function PlayPage() {
   // Load published quizzes for this view
-  const supabase = await createServerSupabaseClient()
+  const cookieStore = await cookies()
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll: () => cookieStore.getAll().map((c) => ({ name: c.name, value: c.value })),
+      } as any,
+    }
+  )
   const {
     data: { user },
   } = await supabase.auth.getUser()
 
   if (!user) {
-    redirect('/login')
+    redirect('/?auth=login')
   }
 
   const { data: rounds } = await supabase
     .from('rounds')
-    .select(
-      'id,label,deadline_at,leagues(name,code),matches(id,kickoff_at,status,result_home,result_away,home_team,away_team,home_team_external_id,away_team_external_id),quizzes(*)',
-    )
-    .neq('status', 'draft')
-    .order('deadline_at', { ascending: true })
+    .select('id,label,deadline_at,leagues(name,code),matches(kickoff_at),quizzes(*)')
+    .neq('status','draft')
+    .order('deadline_at',{ ascending: true })
     .limit(8)
 
   function formatTimeLeft(deadline?: string | null) {
@@ -98,12 +104,16 @@ export default async function PlayPage() {
     })
   }
 
-  // Phone info - check from user metadata (phone fields might not be accessible due to RLS)
-  // Don't query phone fields from profiles table to avoid 400 errors
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('phone, phone_confirmed_at')
+    .eq('id', user.id)
+    .maybeSingle()
   const hasPhone =
+    Boolean(profile?.phone) ||
     Boolean((user as any).phone) ||
     Boolean((user.user_metadata as any)?.phone)
-  const phoneConfirmed = Boolean((user as any).phone_confirmed_at) || Boolean((user.user_metadata as any)?.phone_confirmed_at)
+  const phoneConfirmed = Boolean(profile?.phone_confirmed_at) || Boolean((user as any).phone_confirmed_at)
   const needsPhoneGate = !(hasPhone && phoneConfirmed)
 
   return (
@@ -148,17 +158,9 @@ export default async function PlayPage() {
                 : []
               const earliestKickoff = matchKickoffs.length ? Math.min(...matchKickoffs) : null
               const now = Date.now()
-              const kickoffSource = Number.isFinite(earliestKickoff ?? NaN) ? earliestKickoff! : deadlineTs
-              const matchFinished = Array.isArray(r.matches)
-                ? r.matches.some((m: any) => (m?.status || '').toLowerCase() === 'finished')
-                : false
-              const matchStarted = matchFinished
-                ? true
-                : Number.isFinite(earliestKickoff ?? NaN)
-                  ? earliestKickoff! <= now
-                  : false
-              const isClosed = matchFinished || (Number.isFinite(deadlineTs) ? deadlineTs <= now : false)
+              const isClosed = Number.isFinite(deadlineTs) ? deadlineTs <= now : false
               const hasSubmission = q.id ? Boolean(submissionMap[q.id]) : false
+              const kickoffSource = Number.isFinite(earliestKickoff ?? NaN) ? earliestKickoff! : deadlineTs
               const kickoffLabel = Number.isFinite(kickoffSource)
                 ? new Date(kickoffSource).toLocaleString('pl-PL', {
                     month: 'short',
@@ -167,69 +169,11 @@ export default async function PlayPage() {
                     minute: '2-digit',
                   })
                 : '—'
-              const startCountdown =
-                !matchStarted && Number.isFinite(kickoffSource)
-                  ? formatTimeLeft(new Date(kickoffSource).toISOString())
-                  : null
-              const fallbackDeadlineCountdown = !Number.isFinite(kickoffSource)
-                ? formatTimeLeft(r.deadline_at)
-                : null
-              // Улучшенная логика статусов квизов
-              let chipText = '—'
-              if (matchFinished) {
-                chipText = 'Mecz zakończony'
-              } else if (matchStarted) {
-                chipText = 'Mecz trwa'
-              } else if (Number.isFinite(kickoffSource)) {
-                const timeLeft = startCountdown
-                if (timeLeft) {
-                  chipText = `Start za: ${timeLeft}`
-                } else {
-                  const kickoffTime = new Date(kickoffSource).getTime()
-                  const now = Date.now()
-                  if (kickoffTime <= now) {
-                    chipText = 'Mecz trwa'
-                  } else {
-                    chipText = 'Mecz wkrótce'
-                  }
-                }
-              } else if (fallbackDeadlineCountdown) {
-                chipText = `Koniec za: ${fallbackDeadlineCountdown}`
-              } else if (r.deadline_at) {
-                try {
-                  const deadlineTime = new Date(r.deadline_at).getTime()
-                  const now = Date.now()
-                  if (deadlineTime > now) {
-                    const diff = deadlineTime - now
-                    const hours = Math.floor(diff / (1000 * 60 * 60))
-                    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
-                    if (hours > 24) {
-                      const days = Math.floor(hours / 24)
-                      chipText = `Dostępne jeszcze ${days}d`
-                    } else if (hours > 0) {
-                      chipText = `Dostępne jeszcze ${hours}h ${minutes}m`
-                    } else if (minutes > 0) {
-                      chipText = `Dostępne jeszcze ${minutes}m`
-                    } else {
-                      chipText = 'Wkrótce zamknięte'
-                    }
-                  } else {
-                    chipText = 'Zamknięte'
-                  }
-                } catch {
-                  chipText = '—'
-                }
-              }
               const actionLabel = isClosed
                 ? 'Zamknięte'
                 : hasSubmission
                   ? 'Edytuj typy'
                   : 'Zagraj za darmo'
-              const matchesForCard = Array.isArray(r.matches) ? r.matches.slice(0, 2) : []
-              const extraMatches =
-                Array.isArray(r.matches) && r.matches.length > matchesForCard.length
-                  ? r.matches.length - matchesForCard.length
-                  : 0
               return (
                 <div key={r.id} className="group relative overflow-hidden rounded-[30px] sm:rounded-[34px] bg-gradient-to-r from-[#3a0d0d] via-[#5a0f0f] to-[#7a1313] p-0 shadow-xl">
                   <div className="flex">
@@ -237,26 +181,8 @@ export default async function PlayPage() {
                       <Image src={img} alt="Quiz" fill className="object-cover scale-105 sm:scale-100" />
                       {/* chip */}
                       <div className="absolute top-3 left-3 rounded-full bg-black/70 backdrop-blur-sm text-white text-[11px] px-2 py-1 flex items-center gap-1">
-                        <Timer className="h-3.5 w-3.5" /> {chipText}
+                        <Timer className="h-3.5 w-3.5" /> Koniec za: {formatTimeLeft(r.deadline_at) || '—'}
                       </div>
-                      {matchesForCard.length > 0 && (
-                        <div className="absolute bottom-3 left-3 right-3 space-y-2 rounded-2xl border border-white/15 bg-black/35 px-3 py-2 backdrop-blur-md">
-                          {matchesForCard.map((match: any) => (
-                            <MatchVersusRow
-                              key={match.id || `${match.home_team}-${match.away_team}-${match.kickoff_at}`}
-                              homeName={match.home_team}
-                              awayName={match.away_team}
-                              homeLogo={getTeamLogoUrl(match.home_team_external_id, 'small')}
-                              awayLogo={getTeamLogoUrl(match.away_team_external_id, 'small')}
-                            />
-                          ))}
-                          {extraMatches > 0 && (
-                            <div className="text-right text-[10px] font-semibold text-white/70">
-                              +{extraMatches} dodatkowych spotkań
-                            </div>
-                          )}
-                        </div>
-                      )}
                       <div className="pointer-events-none absolute inset-y-0 right-0 w-40 bg-gradient-to-r from-transparent to-[#7a1313] opacity-95"/>
                     </div>
                     <div className="relative flex-1 p-5 sm:p-6 flex flex-col justify-center items-end text-right">
@@ -303,67 +229,4 @@ export default async function PlayPage() {
       </div>
     </div>
   )
-}
-
-type MatchVersusRowProps = {
-  homeName?: string | null
-  awayName?: string | null
-  homeLogo?: string | null
-  awayLogo?: string | null
-}
-
-function MatchVersusRow({ homeName, awayName, homeLogo, awayLogo }: MatchVersusRowProps) {
-  return (
-    <div className="flex items-center justify-between gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/90">
-      <TeamBadge logo={homeLogo} name={homeName} />
-      <span className="px-2 text-[10px] font-semibold uppercase tracking-[0.4em] text-white/60">VS</span>
-      <TeamBadge logo={awayLogo} name={awayName} align="right" />
-    </div>
-  )
-}
-
-function TeamBadge({
-  logo,
-  name,
-  align = 'left',
-}: {
-  logo?: string | null
-  name?: string | null
-  align?: 'left' | 'right'
-}) {
-  const initials = getInitials(name)
-  return (
-    <div
-      className={cn(
-        'flex flex-1 items-center gap-2 rounded-full bg-black/20 px-2.5 py-1.5 backdrop-blur-sm',
-        align === 'right' ? 'flex-row-reverse text-right' : 'text-left',
-      )}
-    >
-      {logo ? (
-        <Image
-          src={logo}
-          alt={name || ''}
-          width={28}
-          height={28}
-          className="h-7 w-7 rounded-full border border-white/20 object-cover"
-        />
-      ) : (
-        <span className="flex h-7 w-7 items-center justify-center rounded-full border border-white/20 bg-white/10 text-[11px] font-bold">
-          {initials}
-        </span>
-      )}
-      <span className="truncate text-[11px] font-semibold">{name || '—'}</span>
-    </div>
-  )
-}
-
-function getInitials(name?: string | null) {
-  if (!name) return '??'
-  const parts = name
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-    .split(/\s+/)
-    .filter(Boolean)
-  if (parts.length === 0) return '??'
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
-  return `${parts[0][0] || ''}${parts[parts.length - 1][0] || ''}`.toUpperCase()
 }

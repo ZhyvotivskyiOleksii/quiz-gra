@@ -1,131 +1,113 @@
 import { ReactNode } from 'react'
-import { createServerSupabaseClient } from '@/lib/createServerSupabase'
-import { AppShellClient } from '@/components/app/app-shell-client'
-import { InitialAuthState } from '@/types/auth'
-
-export const dynamic = 'force-dynamic'
-export const fetchCache = 'force-no-store'
+import { cookies } from 'next/headers'
+import { redirect } from 'next/navigation'
+import { createServerClient } from '@supabase/ssr'
+import { AppShellClient, InitialAuthState } from '@/components/app/app-shell-client'
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
-  const supabase = await createServerSupabaseClient()
+  const cookieStore = await cookies()
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get: (name: string) => cookieStore.get(name)?.value,
+        set: () => {},
+        remove: () => {},
+      },
+    },
+  )
 
   const {
-    data: { user },
-  } = await supabase.auth.getUser()
+    data: { session },
+  } = await supabase.auth.getSession()
 
-  const emailFromUser = user
-    ? user.email ??
-      (user.user_metadata?.email as string | undefined) ??
-      ((user.user_metadata as any)?.contact_email as string | undefined)
-    : undefined
-
-  const metadataAvatar = user ? ((user.user_metadata?.avatar_url || user.user_metadata?.picture) as string | undefined) : undefined
-  const metadataName = user
-    ? `${(user.user_metadata?.first_name as string | undefined) || ''} ${
-        (user.user_metadata?.last_name as string | undefined) || ''
-      }`.trim()
-    : ''
-
-  let profile:
-    | {
-        display_name?: string | null
-        avatar_url?: string | null
-        is_admin?: boolean | null
-        phone?: string | null
-        phone_confirmed_at?: string | null
-      }
-    | null = null
-  let walletBalance: number | null = null
-  let shortId: string | null = null
-
-  if (user) {
-    const [profileResult, balanceResult, shortIdResult] = await Promise.all([
-      (async () => {
-        try {
-          const { data, error } = await supabase
-            .from('profiles')
-            .select('display_name, avatar_url, is_admin, phone, phone_confirmed_at')
-            .eq('id', user.id)
-            .maybeSingle()
-          return { data, error }
-        } catch (err) {
-          return { data: null, error: err }
-        }
-      })(),
-      (async () => {
-        try {
-          const { data, error } = await supabase.rpc('get_user_balance')
-          if (error) {
-            return { data: 0 }
-          }
-          return { data }
-        } catch {
-          return { data: 0 }
-        }
-      })(),
-      (async () => {
-        try {
-          return await supabase.rpc('get_or_create_short_id')
-        } catch {
-          return { data: null }
-        }
-      })(),
-    ])
-
-    profile = profileResult?.data ?? null
-
-    const walletBalanceRaw = balanceResult?.data
-    walletBalance =
-      typeof walletBalanceRaw === 'number'
-        ? walletBalanceRaw
-        : walletBalanceRaw === null || walletBalanceRaw === undefined
-          ? null
-          : Number(walletBalanceRaw) || null
-
-    shortId =
-      typeof shortIdResult?.data === 'string'
-        ? shortIdResult.data
-        : shortIdResult?.data
-          ? String(shortIdResult.data)
-          : null
+  if (!session?.user) {
+    redirect('/?auth=login')
   }
 
-  const phoneConfirmed =
-    Boolean(profile?.phone_confirmed_at) ||
-    Boolean(user && ((user as any).phone_confirmed_at || (user.user_metadata as any)?.phone_confirmed_at))
+  const user = session.user
+
+  const emailFromUser =
+    user.email ??
+    (user.user_metadata?.email as string | undefined) ??
+    ((user.user_metadata as any)?.contact_email as string | undefined)
+
+  const metadataAvatar = (user.user_metadata?.avatar_url || user.user_metadata?.picture) as string | undefined
+  const metadataName = `${(user.user_metadata?.first_name as string | undefined) || ''} ${
+    (user.user_metadata?.last_name as string | undefined) || ''
+  }`.trim()
+
+  const [{ data: profile }, balanceRes, shortIdRes] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('display_name, avatar_url, is_admin, phone, phone_confirmed_at')
+      .eq('id', user.id)
+      .maybeSingle(),
+    (async () => {
+      try {
+        return await supabase.rpc('get_user_balance')
+      } catch {
+        return { data: null }
+      }
+    })(),
+    (async () => {
+      try {
+        return await supabase.rpc('get_or_create_short_id')
+      } catch {
+        return { data: null }
+      }
+    })(),
+  ])
+
+  const walletBalanceRaw = balanceRes?.data
+  const walletBalance =
+    typeof walletBalanceRaw === 'number'
+      ? walletBalanceRaw
+      : walletBalanceRaw === null || walletBalanceRaw === undefined
+        ? null
+        : Number(walletBalanceRaw) || null
+
+  const shortId =
+    typeof shortIdRes?.data === 'string'
+      ? shortIdRes.data
+      : shortIdRes?.data
+        ? String(shortIdRes.data)
+        : null
+
+  const hasPhone =
+    Boolean(profile?.phone) ||
+    Boolean((user as any).phone) ||
+    Boolean((user.user_metadata as any)?.phone)
+  const phoneConfirmed = Boolean(profile?.phone_confirmed_at) || Boolean((user as any).phone_confirmed_at)
 
   const adminEmailAllowList =
     process.env.NEXT_PUBLIC_ADMIN_EMAILS?.split(',').map((entry) => entry.trim().toLowerCase()).filter(Boolean) ?? []
   const userEmailLower = (emailFromUser || '').toLowerCase()
   const isEnvAdmin = userEmailLower ? adminEmailAllowList.includes(userEmailLower) : false
-  const appRole = (user?.app_metadata?.role as string | undefined)?.toLowerCase()
-  const appRoles = Array.isArray((user?.app_metadata as any)?.roles)
-    ? ((user?.app_metadata as any).roles as string[]).map((r) => r.toLowerCase())
+  const appRole = (user.app_metadata?.role as string | undefined)?.toLowerCase()
+  const appRoles = Array.isArray((user.app_metadata as any)?.roles)
+    ? ((user.app_metadata as any).roles as string[]).map((r) => r.toLowerCase())
     : []
-  const userMetaRole = (user?.user_metadata?.role as string | undefined)?.toLowerCase()
+  const userMetaRole = (user.user_metadata?.role as string | undefined)?.toLowerCase()
   const isAdmin =
     Boolean(profile?.is_admin) ||
-    Boolean(user?.app_metadata?.is_admin) ||
-    Boolean(user?.user_metadata?.is_admin) ||
+    Boolean(user.app_metadata?.is_admin) ||
+    Boolean(user.user_metadata?.is_admin) ||
     isEnvAdmin ||
     appRole === 'admin' ||
     userMetaRole === 'admin' ||
     appRoles.includes('admin')
 
-  const displayName =
-    profile?.display_name ||
-    metadataName ||
-    (emailFromUser ? emailFromUser.split('@')[0] : undefined)
-
   const initialAuth: InitialAuthState = {
     email: emailFromUser || undefined,
     avatarUrl: profile?.avatar_url || metadataAvatar || undefined,
-    displayName: displayName || undefined,
+    displayName: profile?.display_name || metadataName || emailFromUser?.split('@')[0] || 'User',
     shortId,
     isAdmin,
-    needsPhone: user ? !phoneConfirmed : false,
+    needsPhone: !(hasPhone && phoneConfirmed),
     walletBalance,
-    hasSession: Boolean(user),
+    hasSession: true,
   }
 
   return <AppShellClient initialAuth={initialAuth}>{children}</AppShellClient>

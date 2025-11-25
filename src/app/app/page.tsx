@@ -4,7 +4,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { ArrowRight, BrainCircuit, CalendarDays, CheckCircle2, Clock } from 'lucide-react'
 import Image from 'next/image'
 import { redirect } from 'next/navigation'
-import { createServerSupabaseClient } from '@/lib/createServerSupabase'
+import { cookies } from 'next/headers'
+import { createServerClient } from '@supabase/ssr'
 import { cn } from '@/lib/utils'
 
 type UserResultRow = {
@@ -38,34 +39,32 @@ type StatCard = {
   alt: string
 }
 
-const EAGER_STAT_IMAGES = new Set(['/panel/2.png', '/panel/3.png'])
-
 export default async function AppDashboard() {
-  const supabase = await createServerSupabaseClient()
+  const cookieStore = await cookies()
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll: () => cookieStore.getAll().map((c) => ({ name: c.name, value: c.value })),
+      } as any,
+    },
+  )
   const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
+    data: { session },
+  } = await supabase.auth.getSession()
+  if (!session) redirect('/?auth=login')
 
   const now = new Date()
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
   const monthLabel = now.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' })
 
-  let userResults: UserResultRow[] = []
-  try {
-    const { data: userResultsData, error: userResultsError } = await supabase
-      .from('quiz_results')
-      .select('points,total_correct,total_questions,submitted_at,quizzes(title,rounds(label))')
-      .eq('user_id', user.id)
-      .order('submitted_at', { ascending: false })
-
-    if (!userResultsError) {
-      userResults = (userResultsData as UserResultRow[] | null) || []
-    }
-  } catch (err) {
-    userResults = []
-  }
+  const { data: userResults = [] } = (await supabase
+    .from('quiz_results')
+    .select('points,total_correct,total_questions,submitted_at,quizzes(title,rounds(label))')
+    .eq('user_id', session.user.id)
+    .order('submitted_at', { ascending: false })) as { data: UserResultRow[] }
 
   const totalPoints = userResults.reduce((sum, row) => sum + (row.points ?? 0), 0)
   const weeklyPoints = userResults.reduce(
@@ -73,52 +72,25 @@ export default async function AppDashboard() {
     0,
   )
 
-  let submissions: Array<{ created_at: string | null }> = []
-  try {
-    const { data: submissionsData, error: submissionsError } = await supabase
-      .from('quiz_submissions')
-      .select('created_at')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
+  const { data: submissions = [] } = await supabase
+    .from('quiz_submissions')
+    .select('created_at')
+    .eq('user_id', session.user.id)
+    .order('created_at', { ascending: false })
 
-    if (!submissionsError) {
-      submissions = submissionsData || []
-    }
-  } catch (err) {
-    submissions = []
-  }
   const totalAttempts = submissions.length
   const weeklyAttempts = submissions.filter((s) => s.created_at && new Date(s.created_at) >= weekAgo).length
   const recentResults = userResults.slice(0, 4)
 
-  let monthlyResults: MonthlyResultRow[] = []
-  let monthlySubmissions: MonthlySubmissionRow[] = []
-  
-  try {
-    const { data: monthlyResultsData, error: monthlyResultsError } = await supabase
-      .from('quiz_results')
-      .select('user_id,rank,prize_awarded')
-      .gte('submitted_at', monthStart.toISOString())
+  const { data: monthlyResults = [] } = await supabase
+    .from('quiz_results')
+    .select('user_id,rank,prize_awarded')
+    .gte('submitted_at', monthStart.toISOString())
 
-    if (!monthlyResultsError) {
-      monthlyResults = (monthlyResultsData as MonthlyResultRow[] | null) || []
-    }
-  } catch (err) {
-    monthlyResults = []
-  }
-
-  try {
-    const { data: monthlySubmissionsData, error: monthlySubmissionsError } = await supabase
-      .from('quiz_submissions')
-      .select('user_id')
-      .gte('submitted_at', monthStart.toISOString())
-
-    if (!monthlySubmissionsError) {
-      monthlySubmissions = (monthlySubmissionsData as MonthlySubmissionRow[] | null) || []
-    }
-  } catch (err) {
-    monthlySubmissions = []
-  }
+  const { data: monthlySubmissions = [] } = await supabase
+    .from('quiz_submissions')
+    .select('user_id')
+    .gte('submitted_at', monthStart.toISOString())
 
   const participantsSet = new Set<string>()
   ;(monthlySubmissions as MonthlySubmissionRow[]).forEach((row) => {
@@ -134,21 +106,13 @@ export default async function AppDashboard() {
 
   const profileNameMap = new Map<string, string>()
   if (profileIds.size > 0) {
-    try {
-      const { data: profileRowsData, error: profileRowsError } = await supabase
-        .from('profiles')
-        .select('id,display_name')
-        .in('id', Array.from(profileIds))
-
-      if (!profileRowsError) {
-        const profileRows = (profileRowsData as ProfileRow[] | null) || []
-        profileRows.forEach((profile) => {
-          if (profile?.id) profileNameMap.set(profile.id, profile.display_name?.trim() || '')
-        })
-      }
-    } catch (err) {
-      // Silently handle profile fetch errors
-    }
+    const { data: profileRows = [] } = (await supabase
+      .from('profiles')
+      .select('id,display_name')
+      .in('id', Array.from(profileIds))) as { data: ProfileRow[] }
+    ;(profileRows || []).forEach((profile) => {
+      if (profile?.id) profileNameMap.set(profile.id, profile.display_name?.trim() || '')
+    })
   }
 
   const winsMap = new Map<
@@ -160,7 +124,7 @@ export default async function AppDashboard() {
     }
   >()
 
-  ;(monthlyResults as MonthlyResultRow[]).forEach((row) => {
+  ;(monthlyResults as MonthlyResultRow[] | null)?.forEach((row) => {
     if (!row?.user_id) return
     const earnedPrize = row.prize_awarded && Number(row.prize_awarded) > 0
     const isRankWinner = row.rank === 1
@@ -175,7 +139,7 @@ export default async function AppDashboard() {
   const sortedWinners = [...allWinners].sort((a, b) => b.wins - a.wins)
   const totalWins = sortedWinners.reduce((sum, row) => sum + row.wins, 0)
   const leaderboard = sortedWinners.slice(0, 10)
-  const userRankPosition = sortedWinners.findIndex((row) => row.userId === user.id)
+  const userRankPosition = sortedWinners.findIndex((row) => row.userId === session.user.id)
   const userRank = userRankPosition >= 0 ? userRankPosition + 1 : null
 
   const statCards = getStatCards(
@@ -356,7 +320,6 @@ function getStatCards(
 }
 
 function renderStatCard(card: StatCard, isMobile: boolean) {
-  const isHeroImage = EAGER_STAT_IMAGES.has(card.img)
   return (
     <Card
       key={`${card.title}-${isMobile ? 'mobile' : 'desktop'}`}
@@ -366,15 +329,7 @@ function renderStatCard(card: StatCard, isMobile: boolean) {
       )}
     >
       <div className="pointer-events-none absolute inset-y-0 right-0 w-1/2 flex items-end justify-end">
-        <Image
-          src={card.img}
-          alt={card.alt}
-          width={600}
-          height={600}
-          className="h-full w-auto opacity-95"
-          priority={isHeroImage}
-          loading={isHeroImage ? 'eager' : undefined}
-        />
+        <Image src={card.img} alt={card.alt} width={600} height={600} className="h-full w-auto opacity-95" priority={false} />
       </div>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium text-muted-foreground">{card.title}</CardTitle>

@@ -85,44 +85,41 @@ export default function QuizPlayPage() {
   const isAnswered = q ? isQuestionAnswered(q.kind, value) : false
 
   React.useEffect(() => {
-    let cancelled = false
     setLoading(true)
     setError(null)
-    setAnswers({})
-    setStep(0)
-
-    const s = getSupabase()
-    const matchSelect =
-      'id,home_team,away_team,kickoff_at,home_team_external_id,away_team_external_id,round_label'
-
-    const quizPromise = s
-      .from('quizzes')
-      .select('title,round_id')
-      .eq('id', id)
-      .maybeSingle()
-
-    const questionsPromise = s
-      .from('quiz_questions')
-      .select('id,kind,prompt,options,order_index,match_id')
-      .eq('quiz_id', id)
-      .order('order_index', { ascending: true })
-
-    const userPromise = s.auth.getUser()
-
     ;(async () => {
       try {
-        const [{ data: qz, error: quizErr }, { data: qs, error: qErr }] = await Promise.all([
-          quizPromise,
-          questionsPromise,
-        ])
+        const s = getSupabase()
+        const matchSelect =
+          'id,home_team,away_team,kickoff_at,home_team_external_id,away_team_external_id,round_label'
+
+        const quizPromise = s
+          .from('quizzes')
+          .select('title,round_id')
+          .eq('id', id)
+          .maybeSingle()
+
+        const questionsPromise = s
+          .from('quiz_questions')
+          .select('id,kind,prompt,options,order_index,match_id')
+          .eq('quiz_id', id)
+          .order('order_index', { ascending: true })
+
+        const userPromise = s.auth.getUser()
+
+        const [
+          {
+            data: { user },
+          },
+          { data: qz, error: quizErr },
+          { data: qs, error: qErr },
+        ] = await Promise.all([userPromise, quizPromise, questionsPromise])
 
         if (quizErr) throw quizErr
         if (qErr) throw qErr
 
-        if (!cancelled) {
-          if (qz?.title) setTitle(qz.title)
-          setQuestions(qs || [])
-        }
+        if (qz?.title) setTitle(qz.title)
+        setQuestions(qs || [])
 
         const nextMatchMap: Record<string, any> = {}
 
@@ -134,10 +131,8 @@ export default function QuizPlayPage() {
             .maybeSingle()
           if (roundErr) throw roundErr
 
-          if (!cancelled) {
-            setDeadline(r?.deadline_at ?? null)
-            setRoundLabel((r as any)?.label ?? null)
-          }
+          setDeadline(r?.deadline_at ?? null)
+          setRoundLabel((r as any)?.label ?? null)
 
           if (r?.id) {
             const { data: ms, error: matchErr } = await s.from('matches').select(matchSelect).eq('round_id', r.id)
@@ -162,58 +157,36 @@ export default function QuizPlayPage() {
           })
         }
 
-        if (!cancelled) {
-          setMatchMap(nextMatchMap)
-        }
-      } catch (err: any) {
-        if (cancelled) return
-        console.error('Quiz load error', err)
-        setError('Nie udało się załadować wiktoryny. Spróbuj ponownie.')
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    })()
+        setMatchMap(nextMatchMap)
 
-    userPromise
-      .then(async ({ data, error }) => {
-        if (cancelled || error) {
-          if (error) console.error('User session load error', error)
-          return
-        }
-        const user = data?.user
-        if (!user) return
-
-        try {
+        if (user) {
           const { data: submission } = await s
             .from('quiz_submissions')
             .select('id')
             .eq('quiz_id', id)
             .eq('user_id', user.id)
             .maybeSingle()
-          if (!submission?.id || cancelled) return
-
-          const { data: storedAnswers } = await s
-            .from('quiz_answers')
-            .select('question_id,answer')
-            .eq('submission_id', submission.id)
-          if (!storedAnswers?.length || cancelled) return
-
-          const initial: Record<string, any> = {}
-          storedAnswers.forEach((a) => {
-            if (a.question_id) initial[a.question_id] = a.answer
-          })
-          if (!cancelled) setAnswers(initial)
-        } catch (answerErr) {
-          if (!cancelled) console.error('Stored answers load error', answerErr)
+          if (submission?.id) {
+            const { data: storedAnswers } = await s
+              .from('quiz_answers')
+              .select('question_id,answer')
+              .eq('submission_id', submission.id)
+            if (storedAnswers?.length) {
+              const initial: Record<string, any> = {}
+              storedAnswers.forEach((a) => {
+                if (a.question_id) initial[a.question_id] = a.answer
+              })
+              setAnswers(initial)
+            }
+          }
         }
-      })
-      .catch((userErr) => {
-        if (!cancelled) console.error('User session promise failed', userErr)
-      })
-
-    return () => {
-      cancelled = true
-    }
+      } catch (err: any) {
+        console.error('Quiz load error', err)
+        setError('Nie udało się załadować wiktoryny. Spróbuj ponownie.')
+      } finally {
+        setLoading(false)
+      }
+    })()
   }, [id])
 
 

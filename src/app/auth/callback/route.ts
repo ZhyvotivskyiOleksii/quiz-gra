@@ -1,99 +1,77 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabaseClient, type SupabaseCookieAdapter } from '@/lib/createServerSupabase'
+import { createServerClient } from '@supabase/ssr'
 
-// Minimal OAuth callback handler - exchanges the code and redirects back to the app
 export async function GET(req: NextRequest) {
   const url = new URL(req.url)
+  // Prepare a redirect response that we will reuse to ensure cookies are preserved
+  // Prefer an explicitly configured public site URL to avoid wrong origins
+  // when running behind a proxy or when Host headers are rewritten.
   const publicBase = process.env.NEXT_PUBLIC_SITE_URL || url.origin
-  const redirectTarget = url.searchParams.get('from') || '/app'
-  const redirectUrl = new URL(redirectTarget, publicBase)
-  const response = NextResponse.redirect(redirectUrl)
+  const to = new URL(url.searchParams.get('from') || '/app', publicBase)
+  const res = NextResponse.redirect(to)
 
-  const cookieAdapter: SupabaseCookieAdapter = {
-    get: (name: string) => req.cookies.get(name)?.value,
-    getAll: () => req.cookies.getAll().map((c) => ({ name: c.name, value: c.value })),
-    set: (name: string, value: string, options: any) => {
-      try {
-        response.cookies.set({ name, value, ...(options ?? {}) })
-      } catch {}
-    },
-    remove: (name: string, options: any) => {
-      try {
-        response.cookies.set({ name, value: '', ...(options ?? {}), maxAge: 0 })
-      } catch {}
-    },
-    setAll: (cookiesToSet) => {
-      cookiesToSet?.forEach(({ name, value, options }) => {
-        try {
-          response.cookies.set({ name, value, ...(options ?? {}) })
-        } catch {}
-      })
-    },
-  }
-
-  const supabase = await createServerSupabaseClient(cookieAdapter)
-
-  const code = url.searchParams.get('code')
-  if (code) {
-    try {
-      await supabase.auth.exchangeCodeForSession(url.searchParams)
-    } catch {
-      // allow middleware to handle any invalid/expired codes
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get: (name: string) => req.cookies.get(name)?.value,
+        set: (name: string, value: string, options: any) => { try { res.cookies.set({ name, value, ...options }) } catch {} },
+        remove: (name: string, options: any) => { try { res.cookies.set({ name, value: '', ...options, maxAge: 0 }) } catch {} },
+      },
     }
-  }
+  )
 
-  return response
+  try {
+    await supabase.auth.exchangeCodeForSession(url.searchParams)
+  } catch {}
+
+  // Optional: set default marketing consent
+  try {
+    const { data: userRes } = await supabase.auth.getUser()
+    const user = (userRes as any)?.user
+    if (user && !user?.user_metadata?.marketing_consent) {
+      try { await supabase.auth.updateUser({ data: { marketing_consent: true } }) } catch {}
+    }
+  } catch {}
+
+  return res
 }
 
-// Session sync endpoint - only syncs session to server cookies
-// All redirect logic is handled by middleware
+// Sync auth cookies for email/password or SMS flows
 export async function POST(req: NextRequest) {
+  // Always return the same Response instance we attach cookies to
   const res = NextResponse.json({ ok: true })
-  const syncAdapter: SupabaseCookieAdapter = {
-    get: (name: string) => req.cookies.get(name)?.value,
-    getAll: () => req.cookies.getAll().map((c) => ({ name: c.name, value: c.value })),
-    set: (name: string, value: string, options: any) => {
-      try {
-        res.cookies.set({ name, value, ...(options ?? {}) })
-      } catch {}
-    },
-    remove: (name: string, options: any) => {
-      try {
-        res.cookies.set({ name, value: '', ...(options ?? {}), maxAge: 0 })
-      } catch {}
-    },
-    setAll: (cookiesToSet) => {
-      cookiesToSet?.forEach(({ name, value, options }) => {
-        try {
-          res.cookies.set({ name, value, ...(options ?? {}) })
-        } catch {}
-      })
-    },
-  }
 
-  const supabase = await createServerSupabaseClient(syncAdapter)
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get: (name: string) => req.cookies.get(name)?.value,
+        set: (name: string, value: string, options: any) => { try { res.cookies.set({ name, value, ...options }) } catch {} },
+        remove: (name: string, options: any) => { try { res.cookies.set({ name, value: '', ...options, maxAge: 0 }) } catch {} },
+      },
+    }
+  )
 
   try {
     const body = await req.json().catch(() => ({})) as any
     const event = body?.event as string | undefined
     const session = body?.session as { access_token?: string; refresh_token?: string } | undefined
 
-    // Handle sign out
     if (event === 'SIGNED_OUT' || !session?.access_token || !session?.refresh_token) {
-      try { 
-        await supabase.auth.signOut() 
-      } catch {}
+      try { await supabase.auth.signOut() } catch {}
       return res
     }
 
-    // Set session - this will automatically sync cookies via Supabase SSR
     await supabase.auth.setSession({
       access_token: session.access_token!,
       refresh_token: session.refresh_token!,
     })
-    
     return res
   } catch {
+    // Return the same response, but with an error code
     return NextResponse.json({ ok: false }, { status: 400 })
   }
 }
