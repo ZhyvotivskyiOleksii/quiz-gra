@@ -4,9 +4,20 @@ import { createClient } from '@supabase/supabase-js'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Activity, Book, HelpCircle, Users, Zap } from 'lucide-react'
 import { UsersActivityChart } from '@/components/admin/users-activity-chart'
+import { getTeamLogoUrl } from '@/lib/footballApi'
+import Image from 'next/image'
 
 type SubmissionRow = { id: string; submitted_at: string | null }
-type LatestSubmissionRow = { id: string; submitted_at: string | null; quiz_id: string | null; user_id: string | null; quizzes?: { title?: string | null } | null }
+type LatestSubmissionRow = { 
+  id: string
+  submitted_at: string | null
+  quiz_id: string | null
+  user_id: string | null
+  quizzes?: { 
+    title?: string | null
+    round_id?: string | null
+  } | null 
+}
 type ProfileRow = { id: string; display_name?: string | null }
 
 export default async function AdminDashboard() {
@@ -31,14 +42,14 @@ export default async function AdminDashboard() {
   const sixMonthsIso = sixMonthsStart.toISOString()
 
   const [
-    activeQuestionsRes,
+    activeQuizzesRes,
     pendingRoundsRes,
     submissionsLastMonthRes,
     sessionsHourRes,
     submissionsSixMonthsRes,
     latestSubmissionsRes,
   ] = await Promise.all([
-    serviceClient.from('quiz_questions').select('id', { count: 'exact', head: true }).is('correct', null),
+    serviceClient.from('quiz_questions').select('quiz_id').is('correct', null),
     serviceClient
       .from('rounds')
       .select('id', { count: 'exact', head: true })
@@ -49,19 +60,20 @@ export default async function AdminDashboard() {
     serviceClient.from('quiz_submissions').select('submitted_at').gte('submitted_at', sixMonthsIso),
     serviceClient
       .from('quiz_submissions')
-      .select('id,submitted_at,user_id,quiz_id,quizzes(title)')
+      .select('id,submitted_at,user_id,quiz_id,quizzes(title,round_id)')
       .order('submitted_at', { ascending: false })
       .limit(5),
   ])
 
-  if (activeQuestionsRes.error) throw activeQuestionsRes.error
+  if (activeQuizzesRes.error) throw activeQuizzesRes.error
   if (pendingRoundsRes.error) throw pendingRoundsRes.error
   if (submissionsLastMonthRes.error) throw submissionsLastMonthRes.error
   if (sessionsHourRes.error) throw sessionsHourRes.error
   if (submissionsSixMonthsRes.error) throw submissionsSixMonthsRes.error
   if (latestSubmissionsRes.error) throw latestSubmissionsRes.error
 
-  const activeQuestions = activeQuestionsRes.count ?? 0
+  const activeQuizzesRows = (activeQuizzesRes.data || []) as { quiz_id: string | null }[]
+  const activeQuizzes = new Set(activeQuizzesRows.map(r => r.quiz_id).filter((id): id is string => Boolean(id))).size
   const pendingRounds = pendingRoundsRes.count ?? 0
   const submissionsLastMonthRows = (submissionsLastMonthRes.data || []) as { user_id: string | null }[]
   const activeUsers = new Set(submissionsLastMonthRows.map((row) => row.user_id).filter((id): id is string => Boolean(id))).size
@@ -74,6 +86,10 @@ export default async function AdminDashboard() {
   const latestUserIds = Array.from(
     new Set(latestSubmissionRows.map((row) => row.user_id).filter((id): id is string => Boolean(id))),
   )
+  const latestRoundIds = Array.from(
+    new Set(latestSubmissionRows.map((row) => row.quizzes?.round_id).filter((id): id is string => Boolean(id))),
+  )
+  
   let profileMap = new Map<string, string>()
   if (latestUserIds.length > 0) {
     const { data: profileRows = [], error: profileErr } = await serviceClient
@@ -85,18 +101,47 @@ export default async function AdminDashboard() {
       (profileRows as ProfileRow[]).map((profile) => [profile.id, profile.display_name?.trim() || `Gracz ${profile.id.slice(0, 6)}`]),
     )
   }
-  const latestActivities = latestSubmissionRows.map((row) => ({
-    id: row.id,
-    quizTitle: row.quizzes?.title || 'SuperGame',
-    userLabel: row.user_id ? profileMap.get(row.user_id) || `Gracz ${row.user_id.slice(0, 6)}` : 'Anonim',
-    submittedAt: row.submitted_at ? new Date(row.submitted_at) : null,
-  }))
+  
+  // Fetch matches for rounds
+  type MatchInfo = { home_team: string; away_team: string; home_team_external_id: string | null; away_team_external_id: string | null }
+  let matchMap = new Map<string, MatchInfo>()
+  if (latestRoundIds.length > 0) {
+    const { data: matchRows = [] } = await serviceClient
+      .from('matches')
+      .select('round_id,home_team,away_team,home_team_external_id,away_team_external_id')
+      .in('round_id', latestRoundIds)
+    for (const m of matchRows as any[]) {
+      if (m.round_id) {
+        matchMap.set(m.round_id, {
+          home_team: m.home_team || '',
+          away_team: m.away_team || '',
+          home_team_external_id: m.home_team_external_id,
+          away_team_external_id: m.away_team_external_id,
+        })
+      }
+    }
+  }
+  
+  const latestActivities = latestSubmissionRows.map((row) => {
+    const roundId = row.quizzes?.round_id
+    const match = roundId ? matchMap.get(roundId) : null
+    return {
+      id: row.id,
+      quizTitle: row.quizzes?.title || 'SuperGame',
+      userLabel: row.user_id ? profileMap.get(row.user_id) || `Gracz ${row.user_id.slice(0, 6)}` : 'Anonim',
+      submittedAt: row.submitted_at ? new Date(row.submitted_at) : null,
+      homeTeam: match?.home_team || null,
+      awayTeam: match?.away_team || null,
+      homeLogoUrl: match?.home_team_external_id ? getTeamLogoUrl(match.home_team_external_id) : null,
+      awayLogoUrl: match?.away_team_external_id ? getTeamLogoUrl(match.away_team_external_id) : null,
+    }
+  })
 
   const stats = [
     {
-      title: 'Aktywne pytania',
-      value: activeQuestions.toLocaleString('pl-PL'),
-      description: 'Pytania bez rozstrzygnięcia',
+      title: 'Aktywne quizy',
+      value: activeQuizzes.toLocaleString('pl-PL'),
+      description: 'Quizy oczekujące na wyniki',
       icon: HelpCircle,
     },
     {
@@ -127,58 +172,141 @@ export default async function AdminDashboard() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {stats.map((stat) => (
-          <Card
-            key={stat.title}
-            className="border-white/10 bg-gradient-to-br from-white/10 to-transparent shadow-[0_20px_60px_rgba(3,2,12,0.45)]"
-          >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-white/80">{stat.title}</CardTitle>
-              <stat.icon className="h-5 w-5 text-white/60" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-white">{stat.value}</div>
-              <p className="text-xs text-white/60">{stat.description}</p>
-            </CardContent>
-          </Card>
-        ))}
+        {stats.map((stat, index) => {
+          const gradients = [
+            'from-violet-500/20 to-purple-500/5',
+            'from-blue-500/20 to-cyan-500/5',
+            'from-emerald-500/20 to-teal-500/5',
+            'from-primary/20 to-orange-500/5',
+          ]
+          const iconColors = [
+            'text-violet-400',
+            'text-blue-400',
+            'text-emerald-400',
+            'text-primary',
+          ]
+          return (
+            <Card
+              key={stat.title}
+              className={`group relative overflow-hidden border-white/10 bg-gradient-to-br ${gradients[index]} backdrop-blur shadow-[0_20px_60px_rgba(3,2,12,0.45)] transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_25px_70px_rgba(3,2,12,0.55)]`}
+            >
+              <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
+              <CardHeader className="relative flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-white/80">{stat.title}</CardTitle>
+                <div className={`flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 ${iconColors[index]}`}>
+                  <stat.icon className="h-5 w-5" />
+                </div>
+              </CardHeader>
+              <CardContent className="relative">
+                <div className="text-3xl font-bold text-white">{stat.value}</div>
+                <p className="text-xs text-white/50">{stat.description}</p>
+              </CardContent>
+            </Card>
+          )
+        })}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.6fr),minmax(320px,0.8fr)]">
-        <Card className="border-white/10 bg-white/5/70 shadow-[0_35px_90px_rgba(3,2,12,0.6)]">
-          <CardHeader>
-            <CardTitle className="text-white">Aktywność użytkowników</CardTitle>
-            <CardDescription>Liczba podejść w ostatnich 6 miesiącach.</CardDescription>
+        <Card className="border-0 bg-gradient-to-br from-slate-900/80 via-slate-800/60 to-slate-900/80 shadow-2xl backdrop-blur overflow-hidden">
+          <CardHeader className="border-b border-white/5 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-orange-600 shadow-lg shadow-primary/30">
+                <Activity className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <CardTitle className="text-lg font-bold text-white">Aktywność użytkowników</CardTitle>
+                <CardDescription className="text-white/50">Liczba podejść w ostatnich 6 miesiącach</CardDescription>
+              </div>
+            </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-4">
             <UsersActivityChart data={chartData} />
           </CardContent>
         </Card>
 
-        <Card className="border-white/10 bg-black/40 shadow-[0_25px_70px_rgba(3,2,12,0.5)]">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-white">
-              <Zap className="h-5 w-5 text-emerald-300" />
-              Ostatnie aktywności
-            </CardTitle>
-            <CardDescription>Najświeższe zgłoszenia do quizów.</CardDescription>
+        <Card className="border-0 bg-gradient-to-br from-slate-900/80 via-slate-800/60 to-slate-900/80 shadow-2xl backdrop-blur">
+          <CardHeader className="border-b border-white/5 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/30">
+                <Zap className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <CardTitle className="text-lg font-bold text-white">Ostatnie aktywności</CardTitle>
+                <CardDescription className="text-white/50">Najświeższe zgłoszenia do quizów</CardDescription>
+              </div>
+            </div>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-2 pt-4">
             {latestActivities.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Brak zgłoszeń do wyświetlenia.</p>
+              <div className="rounded-xl border border-dashed border-white/10 bg-white/5 px-4 py-8 text-center">
+                <p className="text-sm text-white/50">Brak zgłoszeń do wyświetlenia</p>
+              </div>
             ) : (
-              latestActivities.map((activity) => (
-                <div key={activity.id} className="rounded-2xl bg-white/5 px-3 py-2">
-                  <p className="text-sm font-semibold text-white">{activity.quizTitle}</p>
-                  <p className="text-xs text-white/60">
-                    {activity.userLabel} •{' '}
-                    {activity.submittedAt
-                      ? new Intl.DateTimeFormat('pl-PL', {
-                          dateStyle: 'medium',
-                          timeStyle: 'short',
-                        }).format(activity.submittedAt)
-                      : 'brak daty'}
-                  </p>
+              latestActivities.map((activity, index) => (
+                <div 
+                  key={activity.id} 
+                  className="group relative overflow-hidden rounded-xl border border-white/5 bg-white/[0.02] px-4 py-3 transition-all hover:bg-white/[0.05] hover:border-white/10"
+                >
+                  {index === 0 && (
+                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-emerald-400 to-emerald-600" />
+                  )}
+                  <div className="flex items-center gap-3">
+                    {/* Team logos */}
+                    {(activity.homeLogoUrl || activity.awayLogoUrl) && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        {activity.homeLogoUrl && (
+                          <div className="relative h-8 w-8 rounded-lg bg-white/10 p-1">
+                            <Image
+                              src={activity.homeLogoUrl}
+                              alt=""
+                              fill
+                              className="object-contain p-0.5"
+                              unoptimized
+                            />
+                          </div>
+                        )}
+                        <span className="text-[10px] text-white/30 font-bold">VS</span>
+                        {activity.awayLogoUrl && (
+                          <div className="relative h-8 w-8 rounded-lg bg-white/10 p-1">
+                            <Image
+                              src={activity.awayLogoUrl}
+                              alt=""
+                              fill
+                              className="object-contain p-0.5"
+                              unoptimized
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    
+                    {/* Info */}
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-white truncate">{activity.quizTitle}</p>
+                      {activity.homeTeam && activity.awayTeam && (
+                        <p className="text-xs text-primary/80 truncate">
+                          {activity.homeTeam} vs {activity.awayTeam}
+                        </p>
+                      )}
+                      <p className="text-[11px] text-white/40">
+                        {activity.userLabel} • {activity.submittedAt
+                          ? new Intl.DateTimeFormat('pl-PL', {
+                              day: 'numeric',
+                              month: 'short',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            }).format(activity.submittedAt)
+                          : 'brak daty'}
+                      </p>
+                    </div>
+                    
+                    {/* New badge */}
+                    {index === 0 && (
+                      <span className="shrink-0 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-400">
+                        NOWE
+                      </span>
+                    )}
+                  </div>
                 </div>
               ))
             )}

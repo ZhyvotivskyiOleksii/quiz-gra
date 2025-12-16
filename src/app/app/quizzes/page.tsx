@@ -10,11 +10,14 @@ export default function WeeklyQuizzes() {
   React.useEffect(() => {
     (async () => {
       const s = getSupabase()
+      const now = new Date().toISOString()
       const { data } = await s
         .from('rounds')
         .select('id,label,deadline_at,leagues(name,code),quizzes(id,title)')
-        .eq('status','published')
-        .order('deadline_at',{ascending:true})
+        .eq('status', 'published')
+        .gte('deadline_at', now)
+        .order('deadline_at', { ascending: true })
+        .limit(10)
       setRows(data || [])
     })()
   }, [])

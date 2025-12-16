@@ -4,9 +4,10 @@ import { Badge } from "@/components/ui/badge";
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
-import Image from "next/image";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { History, Trophy, Clock, CheckCircle2, ExternalLink } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 type SubmissionRow = {
   id: string
@@ -86,76 +87,149 @@ export default async function HistoryPage() {
 
   return (
     <div className="space-y-6">
-      <Card className="relative overflow-hidden border border-white/10 bg-[rgba(4,6,18,0.9)] shadow-[0_45px_90px_rgba(3,3,12,0.55)]">
-        <CardHeader className="relative flex flex-col gap-2 bg-gradient-to-r from-white/5 to-transparent">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <CardTitle className="text-3xl font-headline text-white">Historia gier</CardTitle>
-              <CardDescription className="text-white/70">Przeglądaj swoje poprzednie quizy i wyniki.</CardDescription>
+      <Card className="border-0 bg-gradient-to-br from-slate-900/80 via-slate-800/60 to-slate-900/80 shadow-2xl backdrop-blur overflow-hidden">
+        <CardHeader className="border-b border-white/5 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-lg shadow-violet-500/30">
+              <History className="h-6 w-6 text-white" />
             </div>
-            <div className="relative h-20 w-20 sm:h-24 sm:w-24">
-              <Image
-                src="/icon/calendar.webp"
-                alt=""
-                fill
-                className="object-contain drop-shadow-[0_15px_40px_rgba(0,0,0,0.45)]"
-                priority={false}
-              />
+            <div>
+              <CardTitle className="text-xl font-bold text-white">Historia gier</CardTitle>
+              <CardDescription className="text-white/50">Przeglądaj swoje poprzednie quizy i wyniki</CardDescription>
             </div>
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-white/5">
-                <TableHead className="text-white/80">Data</TableHead>
-                <TableHead className="text-white/80">Quiz</TableHead>
-                <TableHead className="text-white/80">Wynik</TableHead>
-                <TableHead className="text-white/80">Status</TableHead>
-                <TableHead className="text-right text-white/80">Szczegóły</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {history.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={5} className="py-8 text-center text-sm text-white/60">
-                    Nie masz jeszcze żadnych quizów w historii. Zagraj w SuperGame, aby zobaczyć swoje wyniki.
-                  </TableCell>
-                </TableRow>
-              )}
-              {history.map(entry => (
-                <TableRow key={entry.id} className="border-white/5 hover:bg-white/5/30">
-                  <TableCell className="text-white">
-                    {entry.submittedAt ? entry.submittedAt.toLocaleDateString('pl-PL') : '—'}
-                  </TableCell>
-                  <TableCell className="text-white">
-                    <div className="font-semibold">{entry.title}</div>
-                    {entry.round && <div className="text-xs text-white/60">{entry.round}</div>}
-                  </TableCell>
-                  <TableCell className="font-semibold text-white">
-                    {typeof entry.totalCorrect === 'number' && typeof entry.totalQuestions === 'number'
-                      ? `${entry.totalCorrect} / ${entry.totalQuestions}`
-                      : '—'}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={entry.pending ? 'outline' : entry.prize ? 'default' : 'secondary'}
-                      className={entry.prize ? 'bg-emerald-500/20 text-emerald-200 border-emerald-500/40' : ''}
-                    >
-                      {entry.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {entry.quizId ? (
-                      <Button asChild variant="ghost" size="sm" className="text-white/80 hover:text-white">
-                        <Link href={`/app/quizzes/${entry.quizId}/play`}>Zobacz quiz</Link>
-                      </Button>
-                    ) : null}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          {history.length === 0 ? (
+            <div className="px-6 py-12 text-center">
+              <div className="mb-3 text-4xl">📋</div>
+              <p className="text-sm text-white/60">Nie masz jeszcze żadnych quizów w historii</p>
+              <p className="text-xs text-white/40">Zagraj w SuperGame, aby zobaczyć swoje wyniki</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-white/5">
+              {history.map((entry, index) => {
+                const isWin = entry.prize && entry.prize > 0
+                const isPerfect = entry.totalCorrect === entry.totalQuestions && entry.totalQuestions !== null
+                const scorePercent = entry.totalCorrect !== null && entry.totalQuestions !== null
+                  ? Math.round((entry.totalCorrect / entry.totalQuestions) * 100)
+                  : 0
+                
+                return (
+                  <div
+                    key={entry.id}
+                    className={cn(
+                      "group flex flex-col gap-3 px-4 py-4 transition-all sm:flex-row sm:items-center sm:justify-between hover:bg-white/[0.02]",
+                      index === 0 && "bg-gradient-to-r from-primary/5 to-transparent"
+                    )}
+                  >
+                    {/* Left side: Date + Quiz info */}
+                    <div className="flex items-center gap-4">
+                      {/* Score badge */}
+                      <div className={cn(
+                        "flex h-12 w-12 flex-col items-center justify-center rounded-xl font-bold shrink-0",
+                        isPerfect
+                          ? "bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-lg shadow-emerald-500/30"
+                          : isWin
+                            ? "bg-gradient-to-br from-primary to-orange-600 text-white shadow-lg shadow-primary/30"
+                            : entry.pending
+                              ? "bg-white/10 text-white/50"
+                              : "bg-white/5 text-white/60"
+                      )}>
+                        {entry.totalCorrect !== null && entry.totalQuestions !== null ? (
+                          <>
+                            <span className="text-lg leading-none">{entry.totalCorrect}</span>
+                            <span className="text-[10px] opacity-70">/{entry.totalQuestions}</span>
+                          </>
+                        ) : (
+                          <Clock className="h-5 w-5" />
+                        )}
+                      </div>
+                      
+                      {/* Quiz info */}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-white truncate">{entry.title}</span>
+                          {isPerfect && <span className="text-sm">🏆</span>}
+                          {isWin && !isPerfect && <span className="text-sm">✨</span>}
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-white/40">
+                          {entry.round && <span>{entry.round}</span>}
+                          {entry.round && entry.submittedAt && <span>•</span>}
+                          {entry.submittedAt && (
+                            <span>{entry.submittedAt.toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Right side: Status + Actions */}
+                    <div className="flex items-center gap-3 sm:gap-4">
+                      {/* Progress bar (desktop only) */}
+                      {!entry.pending && entry.totalCorrect !== null && (
+                        <div className="hidden sm:flex items-center gap-2">
+                          <div className="w-16 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                            <div 
+                              className={cn(
+                                "h-full rounded-full transition-all",
+                                isPerfect ? "bg-emerald-500" : isWin ? "bg-primary" : "bg-white/30"
+                              )}
+                              style={{ width: `${scorePercent}%` }}
+                            />
+                          </div>
+                          <span className={cn(
+                            "text-xs font-medium w-8",
+                            isPerfect ? "text-emerald-400" : isWin ? "text-primary" : "text-white/50"
+                          )}>
+                            {scorePercent}%
+                          </span>
+                        </div>
+                      )}
+                      
+                      {/* Status badge */}
+                      <div className={cn(
+                        "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium",
+                        entry.pending
+                          ? "bg-amber-500/10 text-amber-400 ring-1 ring-amber-500/20"
+                          : isWin
+                            ? "bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20"
+                            : "bg-white/5 text-white/50"
+                      )}>
+                        {entry.pending ? (
+                          <Clock className="h-3 w-3" />
+                        ) : (
+                          <CheckCircle2 className="h-3 w-3" />
+                        )}
+                        {entry.status}
+                      </div>
+                      
+                      {/* Prize indicator */}
+                      {isWin && (
+                        <div className="rounded-full bg-yellow-500/10 px-2.5 py-1 text-xs font-bold text-yellow-400">
+                          +{entry.prize} pkt
+                        </div>
+                      )}
+                      
+                      {/* View button */}
+                      {entry.quizId && (
+                        <Button
+                          asChild
+                          variant="ghost"
+                          size="sm"
+                          className="text-white/60 hover:text-white hover:bg-white/10"
+                        >
+                          <Link href={`/app/quizzes/${entry.quizId}/play`}>
+                            <ExternalLink className="h-4 w-4 mr-1.5" />
+                            Zobacz
+                          </Link>
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

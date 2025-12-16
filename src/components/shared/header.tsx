@@ -134,12 +134,10 @@ export function Header({ initialAuth }: HeaderProps = {}) {
                           ID: {shortId}
                         </div>
                       )}
-                      {formattedBalance && (
-                        <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold text-emerald-200">
-                          <CircleDollarSign className="h-3 w-3" />
-                          <span>Saldo: {formattedBalance}</span>
-                        </div>
-                      )}
+                      <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold text-emerald-200">
+                        <CircleDollarSign className="h-3 w-3" />
+                        <span>Saldo: {formattedBalance ?? '0,00 zł'}</span>
+                      </div>
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem

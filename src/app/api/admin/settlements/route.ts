@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/createServerSupabase'
 import { createClient } from '@supabase/supabase-js'
 import { fetchPendingSettlementTargets, fetchSettlementRows } from '@/lib/admin/fetchSettlements'
+import { settleFutureQuestions } from '@/lib/settleFutureQuestions'
+import { hasPendingFutureQuestions } from '@/lib/autoSettle'
 
 async function resolveAdminServiceClient() {
   const supabase = await createServerSupabaseClient()
@@ -69,14 +71,41 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'quiz_id_required' }, { status: 400 })
   }
 
+  console.log('[Settle API] Starting settlement for quiz:', body.quizId)
+
   try {
-    const { error } = await admin.serviceClient.rpc('settle_quiz', { p_quiz: body.quizId })
+    // Step 1: Try to auto-resolve future questions from Football API
+    console.log('[Settle API] Step 1: Settling future questions...')
+    const futureResult = await settleFutureQuestions(admin.serviceClient)
+    console.log('[Settle API] Future questions result:', futureResult)
+
+    // Step 2: Check if there are still pending future questions
+    console.log('[Settle API] Step 2: Checking pending future questions...')
+    const pending = await hasPendingFutureQuestions(admin.serviceClient, body.quizId)
+    if (pending) {
+      console.log('[Settle API] Quiz has pending future questions, cannot settle')
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'pending_future_questions',
+          message: 'Nie wszystkie pytania future mają ustawione wyniki. Rozstrzygnij najpierw mecze.',
+        },
+        { status: 409 },
+      )
+    }
+
+    // Step 3: Run the settlement RPC
+    console.log('[Settle API] Step 3: Running settle_quiz RPC...')
+    const { data, error } = await admin.serviceClient.rpc('settle_quiz', { p_quiz: body.quizId })
     if (error) {
+      console.error('[Settle API] RPC error:', error)
       throw new Error(error.message || 'settle_failed')
     }
-    return NextResponse.json({ ok: true })
+    
+    console.log('[Settle API] Settlement complete:', data)
+    return NextResponse.json({ ok: true, result: data })
   } catch (err: any) {
-    console.error('manual settle error', err)
+    console.error('[Settle API] Error:', err)
     return NextResponse.json({ ok: false, error: err?.message || 'internal_error' }, { status: 500 })
   }
 }

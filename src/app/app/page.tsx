@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowRight, BrainCircuit, Trophy } from 'lucide-react'
+import { ArrowRight, Target, Trophy, TrendingUp } from 'lucide-react'
 import Image from 'next/image'
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
@@ -31,6 +31,7 @@ type MonthlySubmissionRow = {
 type ProfileRow = {
   id: string | null
   display_name: string | null
+  short_id: string | null
 }
 
 type StatCard = {
@@ -121,10 +122,19 @@ export default async function AppDashboard() {
   if (profileIds.size > 0) {
     const { data: profileRows = [] } = (await serviceSupabase
       .from('profiles')
-      .select('id,display_name')
+      .select('id,display_name,short_id')
       .in('id', Array.from(profileIds))) as { data: ProfileRow[] }
     ;(profileRows || []).forEach((profile) => {
-      if (profile?.id) profileNameMap.set(profile.id, profile.display_name?.trim() || '')
+      if (profile?.id) {
+        const name = profile.display_name?.trim()
+        const shortId = profile.short_id || profile.id.slice(0, 6)
+        if (name) {
+          const truncated = name.slice(0, 4) + '***'
+          profileNameMap.set(profile.id, `${truncated} id ${shortId}`)
+        } else {
+          profileNameMap.set(profile.id, `Gracz id ${shortId}`)
+        }
+      }
     })
   }
 
@@ -134,7 +144,7 @@ export default async function AppDashboard() {
     if (!row?.user_id) return
     const displayName = profileNameMap.get(row.user_id) || `Gracz ${row.user_id.slice(0, 6)}`
     const current =
-      playerStatsMap.get(row.user_id) || ({ userId: row.user_id, displayName, wins: 0, totalPoints: 0 } as PlayerStats)
+      playerStatsMap.get(row.user_id) ?? ({ userId: row.user_id, displayName, wins: 0, totalPoints: 0 } as PlayerStats)
     current.totalPoints += row.points ?? 0
     if ((row.prize_awarded ?? 0) > 0 || row.rank === 1) {
       current.wins += 1
@@ -184,52 +194,120 @@ export default async function AppDashboard() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2 shadow-xl shadow-black/10">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle>Ostatnie podejścia</CardTitle>
-              <CardDescription>Twoje ostatnie odpowiedzi i status weryfikacji</CardDescription>
+        <Card className="lg:col-span-2 border-0 bg-gradient-to-br from-slate-900/80 via-slate-800/60 to-slate-900/80 shadow-2xl backdrop-blur">
+          <CardHeader className="border-b border-white/5 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-orange-600 shadow-lg shadow-primary/30">
+                <TrendingUp className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <CardTitle className="text-lg font-bold text-white">Twoje wyniki</CardTitle>
+                <CardDescription className="text-white/50">Historia gier i zdobyte punkty</CardDescription>
+              </div>
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
+          <CardContent className="pt-4">
+            <div className="space-y-2">
               {recentResults.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-white/10 px-4 py-6 text-center text-sm text-muted-foreground">
-                  Nie masz jeszcze żadnych podejść. Zagraj w SuperGame i wróć tu później.
+                <div className="rounded-xl border border-dashed border-white/10 bg-white/5 px-6 py-8 text-center">
+                  <div className="mb-2 text-3xl">🎮</div>
+                  <p className="text-sm text-white/60">Nie masz jeszcze żadnych podejść</p>
+                  <p className="text-xs text-white/40">Zagraj w SuperGame i wróć tu później</p>
                 </div>
               ) : (
                 recentResults.map((result, idx) => {
                   const title = result.quizzes?.title || `Quiz #${idx + 1}`
-                  const subtitle = result.quizzes?.rounds?.label
-                    ? `${result.quizzes.rounds.label}${result.submitted_at ? ` • ${new Date(result.submitted_at).toLocaleDateString('pl-PL')}` : ''}`
-                    : result.submitted_at
-                      ? new Date(result.submitted_at).toLocaleDateString('pl-PL')
-                      : ''
-                  const scoreLabel = `${result.total_correct ?? 0}/${result.total_questions ?? 6}`
-                  const badgeSuccess = (result.total_correct ?? 0) >= 5
+                  const roundLabel = result.quizzes?.rounds?.label || ''
+                  const dateLabel = result.submitted_at
+                    ? new Date(result.submitted_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric' })
+                    : ''
+                  const correct = result.total_correct ?? 0
+                  const total = result.total_questions ?? 6
+                  const percentage = Math.round((correct / total) * 100)
+                  const isWin = correct >= 4
+                  const isPerfect = correct === total
+                  
                   return (
                     <div
                       key={`${title}-${result.submitted_at ?? idx}`}
-                      className="flex flex-col gap-3 rounded-lg bg-card px-4 py-3 shadow-md shadow-black/10 transition-shadow hover:shadow-lg sm:flex-row sm:items-center sm:justify-between"
+                      className={cn(
+                        "group relative overflow-hidden rounded-xl border transition-all duration-300 hover:scale-[1.01]",
+                        isPerfect
+                          ? "border-emerald-500/30 bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-transparent"
+                          : isWin
+                            ? "border-primary/20 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent"
+                            : "border-white/5 bg-white/[0.02] hover:bg-white/[0.04]"
+                      )}
                     >
-                      <div className="flex items-start gap-3">
-                        <BrainCircuit className="h-5 w-5 text-primary" />
-                        <div>
-                          <div className="font-semibold leading-tight">{title}</div>
-                          <div className="text-xs text-muted-foreground">{subtitle}</div>
+                      <div className="flex items-center justify-between gap-4 px-4 py-3">
+                        {/* Left: Match info */}
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div className={cn(
+                            "flex h-11 w-11 shrink-0 items-center justify-center rounded-lg font-bold text-sm",
+                            isPerfect
+                              ? "bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-lg shadow-emerald-500/30"
+                              : isWin
+                                ? "bg-gradient-to-br from-primary to-orange-600 text-white shadow-lg shadow-primary/30"
+                                : "bg-white/10 text-white/60"
+                          )}>
+                            {correct}/{total}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-white truncate">{title}</span>
+                              {isPerfect && <span className="text-xs">🏆</span>}
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-white/40">
+                              <span>{roundLabel}</span>
+                              {roundLabel && dateLabel && <span>•</span>}
+                              <span>{dateLabel}</span>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* Right: Score bar + status */}
+                        <div className="flex items-center gap-3 shrink-0">
+                          {/* Mini progress bar */}
+                          <div className="hidden sm:flex items-center gap-2">
+                            <div className="w-20 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                              <div 
+                                className={cn(
+                                  "h-full rounded-full transition-all",
+                                  isPerfect ? "bg-emerald-500" : isWin ? "bg-primary" : "bg-white/30"
+                                )}
+                                style={{ width: `${percentage}%` }}
+                              />
+                            </div>
+                            <span className={cn(
+                              "text-xs font-medium w-8",
+                              isPerfect ? "text-emerald-400" : isWin ? "text-primary" : "text-white/50"
+                            )}>
+                              {percentage}%
+                            </span>
+                          </div>
+                          
+                          {/* Status badge */}
+                          <span
+                            className={cn(
+                              "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide",
+                              isPerfect
+                                ? "bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/30"
+                                : isWin
+                                  ? "bg-primary/20 text-primary ring-1 ring-primary/30"
+                                  : "bg-white/10 text-white/50"
+                            )}
+                          >
+                            {isPerfect ? '🎯 Perfect' : isWin ? '✓ Wygrana' : 'Ukończono'}
+                          </span>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-sm font-semibold">{scoreLabel}</span>
-                        <span
-                          className={cn(
-                            'text-xs rounded-full px-2 py-1',
-                            badgeSuccess ? 'bg-emerald-100 text-emerald-700' : 'bg-white/10 text-white/70',
-                          )}
-                        >
-                          {badgeSuccess ? 'zaliczono' : 'weryfikacja'}
-                        </span>
-                      </div>
+                      
+                      {/* Points earned indicator */}
+                      {(result.points ?? 0) > 0 && (
+                        <div className="absolute right-0 top-0 rounded-bl-lg bg-gradient-to-br from-yellow-500/20 to-amber-600/20 px-2 py-0.5">
+                          <span className="text-[10px] font-bold text-yellow-400">+{result.points} pkt</span>
+                        </div>
+                      )}
                     </div>
                   )
                 })
@@ -238,8 +316,8 @@ export default async function AppDashboard() {
           </CardContent>
         </Card>
 
-  <Card className="shadow-xl shadow-black/10 relative overflow-hidden">
-          <div className="pointer-events-none absolute inset-0 opacity-15">
+  <Card className="relative overflow-hidden border-2 border-primary/30 bg-gradient-to-br from-primary/10 via-card to-card shadow-[0_20px_50px_rgba(255,106,39,0.15)]">
+          <div className="pointer-events-none absolute inset-0 opacity-10">
             <Image
               src="/icon/eagle-mascot.webp"
               alt=""
@@ -248,82 +326,179 @@ export default async function AppDashboard() {
               className="object-cover"
             />
           </div>
-          <CardHeader className="relative flex flex-col gap-1">
-            <CardTitle>Top gracze</CardTitle>
+          <CardHeader className="relative flex flex-col gap-1 pb-3">
+            <div className="flex items-center gap-2">
+              <Trophy className="h-5 w-5 text-primary" />
+              <CardTitle className="text-lg font-bold text-white">Top gracze</CardTitle>
+            </div>
             <CardDescription>Wszyscy, którzy grali w QuizTime</CardDescription>
           </CardHeader>
-          <CardContent className="relative">
+          <CardContent className="relative pt-0">
           {topPlayers.length === 0 ? (
               <p className="text-sm text-muted-foreground">Brak wyników. Zagraj w SuperGame i zdobądź podium!</p>
             ) : (
-              <div className="space-y-3">
-                {topPlayers.slice(0, 5).map((player, index) => (
+              <div className="space-y-2">
+                {topPlayers.slice(0, 5).map((player, index) => {
+                  const isTop3 = index < 3
+                  const medalEmojis = ['🥇', '🥈', '🥉']
+                  const medalColors = ['from-yellow-400 to-amber-600', 'from-slate-300 to-slate-500', 'from-orange-400 to-orange-700']
+                  return (
                   <div
                     key={player.userId}
-                    className="relative overflow-hidden rounded-xl border border-white/5 bg-card/80 px-3 py-2 shadow-md shadow-black/10 transition-shadow hover:shadow-lg"
+                    className={cn(
+                      "relative overflow-hidden rounded-xl px-3 py-2.5 transition-all hover:scale-[1.02]",
+                      isTop3 
+                        ? "border border-primary/20 bg-gradient-to-r from-primary/15 via-card/90 to-card/80 shadow-lg shadow-primary/10" 
+                        : "border border-white/5 bg-card/60"
+                    )}
                   >
-                    <div className="pointer-events-none absolute inset-0 opacity-20">
-                      <Image
-                        src="/icon/eagle-mascot.webp"
-                        alt=""
-                        fill
-                        className="object-cover"
-                        sizes="200px"
-                      />
-                    </div>
-                    <div className="relative flex items-center justify-between">
+                    <div className="relative flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/15 text-sm font-semibold text-primary">
-                          #{index + 1}
+                        <div className={cn(
+                          "flex items-center justify-center rounded-full shadow-md",
+                          isTop3 
+                            ? `h-10 w-10 text-xl bg-gradient-to-br ${medalColors[index]} text-white shadow-lg` 
+                            : "h-8 w-8 text-sm font-bold bg-white/10 text-white/70"
+                        )}>
+                          {isTop3 ? medalEmojis[index] : `#${index + 1}`}
                         </div>
-                        <div>
-                          <div className="font-medium leading-tight text-white">{player.displayName}</div>
-                          <p className="text-xs text-muted-foreground">
-                            Punkty: {player.totalPoints.toLocaleString('pl-PL')} • Wygrane: {player.wins.toLocaleString('pl-PL')}
+                        <div className="min-w-0 flex-1">
+                          <div className={cn(
+                            "font-semibold leading-tight truncate",
+                            isTop3 ? "text-white" : "text-white/80"
+                          )}>
+                            {player.displayName}
+                          </div>
+                          <p className="text-[11px] text-muted-foreground">
+                            {player.totalPoints.toLocaleString('pl-PL')} pkt • {player.wins} wyg.
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-1 text-sm font-semibold text-primary">
-                        <Trophy className="h-4 w-4" /> {player.totalPoints.toLocaleString('pl-PL')}
+                      <div className={cn(
+                        "flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-bold border shadow-md",
+                        index === 0 
+                          ? "bg-gradient-to-r from-yellow-500/20 to-amber-500/20 border-yellow-500/40 text-yellow-400 shadow-yellow-500/20" 
+                          : index === 1
+                            ? "bg-gradient-to-r from-slate-400/20 to-slate-300/20 border-slate-400/40 text-slate-300 shadow-slate-400/20"
+                            : index === 2
+                              ? "bg-gradient-to-r from-orange-500/20 to-orange-400/20 border-orange-500/40 text-orange-400 shadow-orange-500/20"
+                              : "bg-white/5 border-white/10 text-white/60"
+                      )}>
+                        <Trophy className={cn(
+                          "h-4 w-4",
+                          index === 0 ? "text-yellow-400" : index === 1 ? "text-slate-300" : index === 2 ? "text-orange-400" : ""
+                        )} />
+                        {player.totalPoints.toLocaleString('pl-PL')}
                       </div>
                     </div>
                   </div>
-                ))}
+                )})}
               </div>
             )}
           </CardContent>
         </Card>
       </div>
 
-      <Card className="shadow-xl shadow-black/10">
-        <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <CardTitle>Ranking miesiąca</CardTitle>
-            <CardDescription>Top 10 graczy w historii QuizTime</CardDescription>
-          </div>
-          <div className="text-sm text-muted-foreground">
-            Aktywni gracze: {participantsSet.size.toLocaleString('pl-PL')} • Łącznie zwycięstw: {totalWins.toLocaleString('pl-PL')}
+      <Card className="border-0 bg-gradient-to-br from-slate-900/80 via-slate-800/60 to-slate-900/80 shadow-2xl backdrop-blur overflow-hidden">
+        <CardHeader className="border-b border-white/5 pb-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-yellow-400 to-amber-600 shadow-lg shadow-yellow-500/30">
+                <Trophy className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <CardTitle className="text-lg font-bold text-white">Ranking graczy</CardTitle>
+                <CardDescription className="text-white/50">Najlepsi w historii QuizTime</CardDescription>
+              </div>
+            </div>
+            <div className="flex items-center gap-4 text-xs">
+              <div className="flex items-center gap-1.5 rounded-full bg-white/5 px-3 py-1.5">
+                <span className="text-white/40">Graczy:</span>
+                <span className="font-semibold text-white">{participantsSet.size}</span>
+              </div>
+              <div className="flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1.5">
+                <span className="text-primary/60">Zwycięstw:</span>
+                <span className="font-semibold text-primary">{totalWins}</span>
+              </div>
+            </div>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-4">
           {allPlayerStats.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Brak aktywności w tym miesiącu. Zagraj pierwszy!</p>
+            <div className="rounded-xl border border-dashed border-white/10 bg-white/5 px-6 py-8 text-center">
+              <div className="mb-2 text-3xl">🏆</div>
+              <p className="text-sm text-white/60">Brak aktywności w tym miesiącu</p>
+              <p className="text-xs text-white/40">Zagraj pierwszy i zdobądź #1!</p>
+            </div>
           ) : (
-            <div className="space-y-3">
-              {allPlayerStats.slice(0, 10).map((row, index) => (
-                <div key={row.userId} className="flex items-center justify-between rounded-lg border border-white/5 bg-card px-4 py-2">
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm font-semibold text-white/80">#{index + 1}</span>
-                    <div>
-                      <div className="font-medium text-white">{row.displayName}</div>
-                      <div className="text-xs text-muted-foreground">
-                        Punkty: {row.totalPoints.toLocaleString('pl-PL')} • Wygrane: {row.wins.toLocaleString('pl-PL')}
+            <div className="space-y-2">
+              {allPlayerStats.slice(0, 10).map((row, index) => {
+                const isTop3 = index < 3
+                const medalEmojis = ['🥇', '🥈', '🥉']
+                const medalGradients = [
+                  'from-yellow-400 via-amber-500 to-yellow-600',
+                  'from-slate-300 via-slate-400 to-slate-500',
+                  'from-orange-400 via-amber-600 to-orange-700',
+                ]
+                
+                return (
+                  <div
+                    key={row.userId}
+                    className={cn(
+                      "group relative flex items-center justify-between rounded-xl px-4 py-3 transition-all duration-300",
+                      isTop3
+                        ? "bg-gradient-to-r from-white/[0.08] to-transparent border border-white/10 hover:border-white/20"
+                        : "bg-white/[0.02] hover:bg-white/[0.05] border border-transparent"
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      {/* Rank badge */}
+                      <div className={cn(
+                        "flex items-center justify-center rounded-xl font-bold shrink-0",
+                        isTop3
+                          ? `h-12 w-12 text-2xl bg-gradient-to-br ${medalGradients[index]} text-white shadow-lg`
+                          : "h-10 w-10 text-sm bg-white/10 text-white/50"
+                      )}>
+                        {isTop3 ? medalEmojis[index] : `#${index + 1}`}
+                      </div>
+                      
+                      {/* Player info */}
+                      <div className="min-w-0 flex-1">
+                        <div className={cn(
+                          "font-semibold truncate",
+                          isTop3 ? "text-white" : "text-white/80"
+                        )}>
+                          {row.displayName}
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-white/40">
+                          <span className="flex items-center gap-1">
+                            <span className="text-primary">●</span>
+                            {row.totalPoints.toLocaleString('pl-PL')} pkt
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Trophy className="h-3 w-3" />
+                            {row.wins} wyg.
+                          </span>
+                        </div>
                       </div>
                     </div>
+                    
+                    {/* Points display */}
+                    <div className={cn(
+                      "flex items-center gap-2 rounded-lg px-3 py-1.5",
+                      isTop3 ? "bg-primary/20" : "bg-white/5"
+                    )}>
+                      <span className={cn(
+                        "text-lg font-bold tabular-nums",
+                        isTop3 ? "text-primary" : "text-white/60"
+                      )}>
+                        {row.totalPoints.toLocaleString('pl-PL')}
+                      </span>
+                      <span className="text-[10px] text-white/30 uppercase">pkt</span>
+                    </div>
                   </div>
-                  <span className="text-sm font-semibold text-primary">{row.totalPoints.toLocaleString('pl-PL')}</span>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </CardContent>

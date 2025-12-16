@@ -55,6 +55,23 @@ export function LoginForm({
   const [otpCode, setOtpCode] = React.useState('');
   const [postLoginPending, setPostLoginPending] = React.useState(false);
 
+  const resolveSiteOrigin = React.useCallback(() => {
+    const envOrigin = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+    const isLocalEnv = envOrigin
+      ? /localhost|127\.0\.0\.1/i.test(envOrigin)
+      : false;
+
+    if (envOrigin && !isLocalEnv) {
+      return envOrigin.replace(/\/$/, '');
+    }
+
+    if (typeof window !== 'undefined') {
+      return window.location.origin.replace(/\/$/, '');
+    }
+
+    return 'https://quiz-time.pl';
+  }, []);
+
   const destination = React.useMemo(() => {
     if (redirectTo && redirectTo.startsWith('/')) return redirectTo;
     return '/app';
@@ -351,9 +368,7 @@ export function LoginForm({
         return;
       }
       const supabase = getSupabase();
-      const origin =
-        (process.env.NEXT_PUBLIC_SITE_URL as string | undefined) ||
-        (typeof window !== 'undefined' ? window.location.origin : '');
+      const origin = resolveSiteOrigin();
       await supabase.auth.resetPasswordForEmail(emailVal, {
         redirectTo: `${origin}/reset-password`,
       });
@@ -418,7 +433,8 @@ export function LoginForm({
       });
       return;
     }
-    if (!otpCode.trim()) {
+    const cleanCode = otpCode.trim().replace(/\s+/g, '');
+    if (!cleanCode) {
       toast({
         title: 'Podaj kod z SMS',
         variant: 'destructive' as any,
@@ -437,7 +453,7 @@ export function LoginForm({
 
       const { data, error } = await supabase.auth.verifyOtp({
         phone,
-        token: otpCode,
+        token: cleanCode,
         type: 'sms',
       });
       if (error) throw error;
@@ -476,9 +492,23 @@ export function LoginForm({
       
       onSuccess?.();
     } catch (err: any) {
+      console.error('OTP verification error:', { 
+        message: err?.message, 
+        code: err?.code,
+        status: err?.status,
+        phone,
+        codeLength: cleanCode.length
+      })
+      const errorMsg = err?.message?.toLowerCase() || ''
+      let description = err?.message ?? 'Invalid code'
+      if (errorMsg.includes('expired')) {
+        description = 'Kod wygasł. Wyślij nowy kod.'
+      } else if (errorMsg.includes('invalid') || errorMsg.includes('incorrect')) {
+        description = 'Nieprawidłowy kod. Sprawdź czy wpisałeś poprawnie.'
+      }
       toast({
         title: 'Nieprawidłowy kod.',
-        description: err?.message ?? 'Invalid code',
+        description,
         variant: 'destructive' as any,
       });
     } finally {
@@ -738,11 +768,8 @@ export function LoginForm({
             onClick={async () => {
               try {
                 const supabase = getSupabase();
-                const origin =
-                  (process.env.NEXT_PUBLIC_SITE_URL as string | undefined) ||
-                  (typeof window !== 'undefined'
-                    ? window.location.origin
-                    : '');
+                const origin = resolveSiteOrigin();
+                console.log('[Google OAuth] Redirect origin:', origin);
                 await supabase.auth.signInWithOAuth({
                   provider: 'google',
                   options: {
@@ -754,6 +781,7 @@ export function LoginForm({
                   },
                 });
               } catch (e) {
+                console.error('[Google OAuth] Error:', e);
                 toast({
                   title: 'Nie udało się rozpocząć logowania Google',
                   variant: 'destructive' as any,

@@ -42,23 +42,39 @@ function AuthCallbackInner() {
         const supabase = getSupabase()
         const currentUrl = new URL(window.location.href)
 
-        const syncSessionToServer = async (accessToken: string, refreshToken: string) => {
+        const syncSessionToServer = async (accessToken: string, refreshToken: string, retryCount = 0) => {
           setStatus('syncing')
-          const resp = await fetch('/api/auth/callback', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({
-              event: 'SIGNED_IN',
-              session: {
-                access_token: accessToken,
-                refresh_token: refreshToken,
-              },
-            }),
-          })
+          try {
+            const resp = await fetch('/api/auth/callback', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({
+                event: 'SIGNED_IN',
+                session: {
+                  access_token: accessToken,
+                  refresh_token: refreshToken,
+                },
+              }),
+            })
 
-          if (!resp.ok) {
-            throw new Error('Nie udało się zsynchronizować sesji.')
+            if (!resp.ok) {
+              // If 502/503, might be a deployment issue - retry once
+              if ((resp.status === 502 || resp.status === 503) && retryCount < 2) {
+                console.warn(`[auth/callback] Got ${resp.status}, retrying...`)
+                await new Promise(r => setTimeout(r, 1000))
+                return syncSessionToServer(accessToken, refreshToken, retryCount + 1)
+              }
+              throw new Error('Nie udało się zsynchronizować sesji.')
+            }
+          } catch (err: any) {
+            // Network errors or server errors - retry once
+            if (retryCount < 2) {
+              console.warn('[auth/callback] Sync failed, retrying...', err)
+              await new Promise(r => setTimeout(r, 1000))
+              return syncSessionToServer(accessToken, refreshToken, retryCount + 1)
+            }
+            throw err
           }
         }
 

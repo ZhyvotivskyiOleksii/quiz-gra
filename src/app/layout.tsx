@@ -5,6 +5,7 @@ import { ReactNode } from 'react'
 import { ConditionalChrome } from '@/components/shared/conditional-chrome'
 import 'react-phone-input-2/lib/style.css'
 import { ThemeProvider } from '@/components/shared/theme-provider'
+import { VersionCheck } from '@/components/shared/version-check'
 
 export const metadata: Metadata = {
   title: 'QuizTime',
@@ -22,6 +23,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       </head>
       <body className="font-body antialiased bg-background text-foreground">
         <ThemeProvider>
+          <VersionCheck />
           <ConditionalChrome>{children}</ConditionalChrome>
           <Toaster />
         </ThemeProvider>

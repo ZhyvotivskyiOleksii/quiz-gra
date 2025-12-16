@@ -1,4 +1,10 @@
 import type {NextConfig} from 'next';
+import crypto from 'crypto';
+
+// Generate a stable build ID based on timestamp (changes on each deploy)
+const generateBuildId = () => {
+  return crypto.randomBytes(8).toString('hex');
+};
 
 const nextConfig: NextConfig = {
   /* config options here */
@@ -6,6 +12,12 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   outputFileTracingRoot: __dirname,
+  
+  // Generate unique build ID for each deployment
+  generateBuildId: async () => {
+    return process.env.BUILD_ID || generateBuildId();
+  },
+  
   async redirects() {
     // Keep empty to avoid accidental cycles during debugging
     return []

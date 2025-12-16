@@ -143,10 +143,16 @@ function SettingsContent() {
         </div>
 
         <TabsContent value="account">
-          <Card className="mt-2">
+          <Card className="mt-2 border-0 bg-gradient-to-br from-slate-900/80 via-slate-800/60 to-slate-900/80 shadow-2xl backdrop-blur">
             <CardContent className="p-6 sm:p-8">
-              <div className="mb-6">
-                <h2 className="text-xl sm:text-2xl font-headline font-extrabold uppercase">Informacje o koncie</h2>
+              <div className="flex items-center gap-3 mb-6">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-orange-600 shadow-lg shadow-primary/30">
+                  <User className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-white">Informacje o koncie</h2>
+                  <p className="text-sm text-white/50">Zarządzaj swoimi danymi osobowymi</p>
+                </div>
               </div>
               <div className="flex items-center gap-4 mb-6">
                 <Avatar className="h-20 w-20">
@@ -220,11 +226,73 @@ function SettingsContent() {
         </TabsContent>
 
         <TabsContent value="consents">
-          <Card className="mt-2"><CardContent className="p-6">Wkrótce: zarządzanie zgodami marketingowymi.</CardContent></Card>
+          <Card className="mt-2 border-0 bg-gradient-to-br from-slate-900/80 via-slate-800/60 to-slate-900/80 shadow-2xl backdrop-blur">
+            <CardContent className="p-6 sm:p-8">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg shadow-blue-500/30">
+                  <Hand className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-white">Zgody marketingowe</h2>
+                  <p className="text-sm text-white/50">Zarządzaj swoimi preferencjami</p>
+                </div>
+              </div>
+              
+              <div className="max-w-md rounded-xl border border-white/10 bg-white/5 p-6 text-center">
+                <div className="mb-3 text-3xl">🚧</div>
+                <p className="text-white/70">Wkrótce dostępne</p>
+                <p className="text-sm text-white/50 mt-1">Pracujemy nad tą funkcją</p>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="support">
-          <Card className="mt-2"><CardContent className="p-6">Potrzebujesz pomocy? Napisz na support@quiztime.app</CardContent></Card>
+          <Card className="mt-2 border-0 bg-gradient-to-br from-slate-900/80 via-slate-800/60 to-slate-900/80 shadow-2xl backdrop-blur">
+            <CardContent className="p-6 sm:p-8">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/30">
+                  <HelpCircle className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-white">Pomoc & Wsparcie</h2>
+                  <p className="text-sm text-white/50">Skontaktuj się z nami</p>
+                </div>
+              </div>
+              
+              <div className="max-w-md space-y-4">
+                <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/20 text-primary">
+                      📧
+                    </div>
+                    <div>
+                      <p className="text-sm text-white/60">E-mail</p>
+                      <a href="mailto:support@quiztime.app" className="text-primary hover:underline font-medium">
+                        support@quiztime.app
+                      </a>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/20 text-primary">
+                      💬
+                    </div>
+                    <div>
+                      <p className="text-sm text-white/60">Czas odpowiedzi</p>
+                      <p className="text-white font-medium">Do 24 godzin</p>
+                    </div>
+                  </div>
+                </div>
+                
+                <p className="text-xs text-white/40 text-center">
+                  Odpowiadamy na wszystkie zapytania w dni robocze
+                </p>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>
@@ -266,39 +334,62 @@ function PhoneVerificationPanel() {
 
   return (
     <>
-      <Card className="mt-2">
+      <Card className="mt-2 border-0 bg-gradient-to-br from-slate-900/80 via-slate-800/60 to-slate-900/80 shadow-2xl backdrop-blur">
         <CardContent className="p-6 sm:p-8">
-          <div className="mb-4 flex items-center gap-2">
-            <Phone className="h-5 w-5 text-muted-foreground" />
-            <h2 className="text-xl font-headline font-extrabold uppercase">Weryfikacja numeru telefonu</h2>
+          <div className="flex items-center gap-3 mb-6">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-lg shadow-violet-500/30">
+              <Phone className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-white">Weryfikacja telefonu</h2>
+              <p className="text-sm text-white/50">Potwierdź swój numer telefonu</p>
+            </div>
           </div>
           {loading ? (
             <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-muted-foreground">
               Ładuję informacje o numerze telefonu…
             </div>
           ) : confirmed && currentPhone ? (
-            <div className="space-y-4">
-              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm">
-                <div className="flex items-center gap-2 text-emerald-500">
-                  <BadgeCheck className="h-5 w-5" />
-                  Zweryfikowany numer
+            <div className="max-w-md space-y-4">
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-5">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/20">
+                    <BadgeCheck className="h-6 w-6 text-emerald-400" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-emerald-400">Zweryfikowany</p>
+                    <p className="text-lg font-bold text-white">{prettyPhone(currentPhone)}</p>
+                  </div>
                 </div>
-                <div className="mt-3 text-lg font-semibold text-white">{prettyPhone(currentPhone)}</div>
-                <p className="text-sm text-emerald-100/80">
-                  Wszystko gra — możesz brać udział w płatnych kampaniach i szybciej odzyskać konto w razie potrzeby.
+                <p className="text-sm text-emerald-200/70">
+                  ✓ Możesz brać udział w kampaniach z nagrodami<br/>
+                  ✓ Masz pełny dostęp do wszystkich funkcji
                 </p>
               </div>
-              <Button variant="secondary" className="h-10" onClick={() => setGateOpen(true)}>
-                Zmień numer
+              <Button variant="outline" className="h-10 border-white/10 hover:bg-white/5" onClick={() => setGateOpen(true)}>
+                Zmień numer telefonu
               </Button>
             </div>
           ) : (
-            <div className="space-y-4">
-              <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/80">
-                Zweryfikowany numer telefonu jest wymagany do wypłat i udziału w kampaniach z nagrodami. Proces zajmuje mniej niż minutę.
+            <div className="max-w-md space-y-4">
+              <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4">
+                <div className="flex items-start gap-3">
+                  <div className="text-amber-400 text-lg">📱</div>
+                  <div className="text-sm text-white/80">
+                    <p className="font-medium text-white mb-1">Dlaczego warto zweryfikować?</p>
+                    <ul className="space-y-1 text-white/60">
+                      <li>• Udział w kampaniach z nagrodami</li>
+                      <li>• Szybsze odzyskiwanie konta</li>
+                      <li>• Proces trwa mniej niż minutę</li>
+                    </ul>
+                  </div>
+                </div>
               </div>
-              <Button className="h-11 w-full sm:w-auto" onClick={() => setGateOpen(true)}>
-                Zweryfikuj telefon
+              <Button 
+                className="h-11 w-full bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white font-semibold shadow-lg shadow-violet-500/30" 
+                onClick={() => setGateOpen(true)}
+              >
+                🔐 Zweryfikuj telefon
               </Button>
               {currentPhone && (
                 <p className="text-xs text-muted-foreground">
@@ -425,26 +516,81 @@ function AccountEditForm({ firstName, lastName, email, contactEmail, birthDate, 
 
 function ChangePasswordPanel() {
   const { toast } = useToast()
+  const [currentPwd, setCurrentPwd] = React.useState('')
   const [pwd, setPwd] = React.useState('')
+  const [confirmPwd, setConfirmPwd] = React.useState('')
   const [loading, setLoading] = React.useState(false)
+  
+  const isValid = pwd.length >= 8 && pwd === confirmPwd
+  
   async function save() {
+    if (!isValid) return
     setLoading(true)
     try {
       const supabase = getSupabase();
       const { error } = await supabase.auth.updateUser({ password: pwd })
       if (error) throw error
       setPwd('')
-      toast({ title: 'Hasło zaktualizowane' })
+      setConfirmPwd('')
+      setCurrentPwd('')
+      toast({ title: 'Hasło zaktualizowane', description: 'Twoje hasło zostało pomyślnie zmienione.' })
     } catch (e: any) {
       toast({ title: 'Błąd', description: e?.message || 'Nie udało się zmienić hasła', variant: 'destructive' as any })
     } finally { setLoading(false) }
   }
+  
   return (
-    <Card className="mt-2">
-      <CardContent className="p-6 sm:p-8 space-y-4">
-        <h2 className="text-xl font-headline font-extrabold uppercase">Zmień hasło</h2>
-        <NotchedInput type="password" label={'Nowe hasło'} value={pwd} onChange={(e:any)=>setPwd(e.target.value)} />
-        <Button onClick={save} disabled={loading || pwd.length < 8} className="h-10 w-full sm:w-auto">Zapisz</Button>
+    <Card className="mt-2 border-0 bg-gradient-to-br from-slate-900/80 via-slate-800/60 to-slate-900/80 shadow-2xl backdrop-blur">
+      <CardContent className="p-6 sm:p-8">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-red-500 to-rose-600 shadow-lg shadow-red-500/30">
+            <Lock className="h-5 w-5 text-white" />
+          </div>
+          <div>
+            <h2 className="text-lg font-bold text-white">Zmiana hasła</h2>
+            <p className="text-sm text-white/50">Ustaw nowe hasło do swojego konta</p>
+          </div>
+        </div>
+        
+        <div className="max-w-md space-y-4">
+          <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 text-amber-400">⚠️</div>
+              <div className="text-sm text-white/70">
+                <p className="font-medium text-white/90 mb-1">Wymagania hasła:</p>
+                <ul className="space-y-1 text-white/60">
+                  <li className={pwd.length >= 8 ? 'text-emerald-400' : ''}>• Minimum 8 znaków {pwd.length >= 8 && '✓'}</li>
+                  <li className={pwd === confirmPwd && confirmPwd.length > 0 ? 'text-emerald-400' : ''}>• Hasła muszą być identyczne {pwd === confirmPwd && confirmPwd.length > 0 && '✓'}</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          
+          <div className="space-y-3">
+            <NotchedInput 
+              type="password" 
+              label="Nowe hasło" 
+              value={pwd} 
+              onChange={(e:any)=>setPwd(e.target.value)} 
+              placeholder="Wprowadź nowe hasło"
+            />
+            <NotchedInput 
+              type="password" 
+              label="Potwierdź nowe hasło" 
+              value={confirmPwd} 
+              onChange={(e:any)=>setConfirmPwd(e.target.value)} 
+              placeholder="Powtórz nowe hasło"
+            />
+          </div>
+          
+          <Button 
+            onClick={save} 
+            disabled={loading || !isValid} 
+            className="h-11 w-full bg-gradient-to-r from-primary to-orange-600 hover:from-primary/90 hover:to-orange-600/90 text-white font-semibold shadow-lg shadow-primary/30"
+          >
+            {loading ? 'Zapisywanie…' : 'Zmień hasło'}
+          </Button>
+        </div>
       </CardContent>
     </Card>
   )

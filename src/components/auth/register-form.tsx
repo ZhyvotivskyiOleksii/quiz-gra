@@ -171,7 +171,9 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
     setIsLoading(true)
     try {
       const supabase = getSupabase();
-      const { data, error } = await supabase.auth.verifyOtp({ phone: pendingPhone.replace(/[^\d+]/g, ''), token: otpCode, type: 'sms' })
+      const cleanPhone = pendingPhone.replace(/[^\d+]/g, '')
+      const cleanCode = otpCode.trim().replace(/\s+/g, '')
+      const { data, error } = await supabase.auth.verifyOtp({ phone: cleanPhone, token: cleanCode, type: 'sms' })
       if (error) throw error
       // We have a session now; securely link email/password so it appears in Auth → Users
       if (pendingProfile) {
@@ -263,7 +265,21 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
         router.replace('/app')
       }
     } catch (err: any) {
-      toast({ title: 'Nieprawidłowy kod.', description: err?.message ?? 'Invalid code', variant: 'destructive' as any })
+      console.error('OTP verification error:', { 
+        message: err?.message, 
+        code: err?.code,
+        status: err?.status,
+        phone: cleanPhone,
+        codeLength: cleanCode.length
+      })
+      const errorMsg = err?.message?.toLowerCase() || ''
+      let description = err?.message ?? 'Invalid code'
+      if (errorMsg.includes('expired')) {
+        description = 'Kod wygasł. Wyślij nowy kod.'
+      } else if (errorMsg.includes('invalid') || errorMsg.includes('incorrect')) {
+        description = 'Nieprawidłowy kod. Sprawdź czy wpisałeś poprawnie.'
+      }
+      toast({ title: 'Nieprawidłowy kod.', description, variant: 'destructive' as any })
     } finally {
       setIsLoading(false)
     }

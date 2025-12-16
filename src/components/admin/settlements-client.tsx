@@ -78,6 +78,7 @@ export function SettlementsClient({ initialRows, initialPending }: SettlementsCl
   }, [toast])
 
   const handleAutoSettle = React.useCallback(async () => {
+    console.log('[AutoSettle] Starting auto-settle all quizzes')
     setSettling(true)
     try {
       const res = await fetch('/api/admin/auto-settle-session', {
@@ -85,6 +86,7 @@ export function SettlementsClient({ initialRows, initialPending }: SettlementsCl
         credentials: 'include',
       })
       const data = await res.json()
+      console.log('[AutoSettle] Response:', { status: res.status, data })
       
       if (!res.ok || !data.ok) {
         throw new Error(data.error || 'Failed to settle quizzes')
@@ -93,21 +95,34 @@ export function SettlementsClient({ initialRows, initialPending }: SettlementsCl
       const summary = {
         attempted: data.attempted || 0,
         settled: Array.isArray(data.settled) ? data.settled.length : 0,
-        skipped: Array.isArray(data.skipped) ? data.skipped.length : 0,
+        skipped: Array.isArray(data.skipped) ? data.skipped : [],
+      }
+      
+      console.log('[AutoSettle] Summary:', summary)
+
+      let description = ''
+      if (summary.settled > 0) {
+        description = `Zamknięto ${summary.settled} quiz${summary.settled === 1 ? '' : 'ów'}.`
+        if (summary.skipped.length > 0) {
+          description += ` Pominęto ${summary.skipped.length} (sprawdź konsolę).`
+        }
+      } else {
+        description = 'Sprawdź, czy deadline minął oraz czy pytania future mają ustawione wyniki.'
+        if (summary.skipped.length > 0) {
+          console.log('[AutoSettle] Skipped reasons:', summary.skipped)
+        }
       }
 
       toast({
         title: summary.settled ? 'Rozliczono quizy' : 'Brak quizów do rozliczenia',
-        description:
-          summary.settled > 0
-            ? `Zamknięto ${summary.settled} quiz${summary.settled === 1 ? '' : 'ów'}. Pominęto ${summary.skipped}.`
-            : 'Sprawdź, czy deadline minął oraz czy pytania future mają ustawione wyniki.',
+        description,
       })
 
       // Wait a bit for database to update, then reload settlements
       await new Promise(resolve => setTimeout(resolve, 500))
       await loadSettlements()
     } catch (err: any) {
+      console.error('[AutoSettle] Error:', err)
       toast({
         title: 'Błąd rozliczenia',
         description: err?.message || 'Nie udało się rozliczyć quizów',
@@ -120,6 +135,7 @@ export function SettlementsClient({ initialRows, initialPending }: SettlementsCl
 
   const handleManualSettle = React.useCallback(
     async (quizId: string) => {
+      console.log('[Settlement] Starting manual settle for quiz:', quizId)
       setSingleSettling(quizId)
       try {
         const resp = await fetch('/api/admin/settlements', {
@@ -129,12 +145,19 @@ export function SettlementsClient({ initialRows, initialPending }: SettlementsCl
           body: JSON.stringify({ quizId }),
         })
         const data = await resp.json().catch(() => ({}))
+        console.log('[Settlement] Response:', { status: resp.status, data })
+        
         if (!resp.ok || !data?.ok) {
-          throw new Error(data?.error || 'Nie udało się rozliczyć quizu')
+          const errorMessage = data?.message || data?.error || 'Nie udało się rozliczyć quizu'
+          if (data?.error === 'pending_future_questions') {
+            throw new Error('Nie wszystkie pytania "future" mają ustawione wyniki. Najpierw rozstrzygnij mecze.')
+          }
+          throw new Error(errorMessage)
         }
         toast({ title: 'Quiz rozliczony', description: 'Wyniki zostały przeliczone.' })
         await loadSettlements()
       } catch (err: any) {
+        console.error('[Settlement] Error:', err)
         toast({
           title: 'Błąd rozliczenia',
           description: err?.message || 'Nie udało się rozliczyć quizu',

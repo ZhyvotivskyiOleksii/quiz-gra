@@ -14,9 +14,10 @@ export const FUTURE_KINDS = ['future_1x2', 'future_score', 'future_yellow_cards'
 type FutureKind = (typeof FUTURE_KINDS)[number]
 type FutureStatKind = 'future_yellow_cards' | 'future_corners'
 
-const FUTURE_STAT_KEYS: Record<FutureStatKind, string> = {
-  future_yellow_cards: 'yellow_cards',
-  future_corners: 'corner',
+// Map question kind to stat key(s) - first match wins
+const FUTURE_STAT_KEYS: Record<FutureStatKind, string[]> = {
+  future_yellow_cards: ['yellow_cards', 'yellowcards', 'yellow cards', 'cards_yellow'],
+  future_corners: ['corner', 'corners', 'corner_kicks', 'cornerkicks'],
 }
 
 type PendingQuestion = {
@@ -279,12 +280,30 @@ function isFutureStatKind(kind: FutureKind): kind is FutureStatKind {
   return kind === 'future_yellow_cards' || kind === 'future_corners'
 }
 
-function extractStatTotal(stats: ScoreBusterMatchStatMap | null, key: string) {
-  if (!stats) return null
-  const stat = stats[key]
-  if (!stat) return null
-  const total = (stat.home ?? 0) + (stat.away ?? 0)
-  return Number.isFinite(total) ? total : null
+function extractStatTotal(stats: ScoreBusterMatchStatMap | null, keys: string[], debug?: string) {
+  if (!stats) {
+    if (debug) console.log(`[extractStatTotal] No stats object for ${debug}`)
+    return null
+  }
+  // Log available keys for debugging
+  if (debug) {
+    console.log(`[extractStatTotal] ${debug} - looking for keys:`, keys, 'available:', Object.keys(stats))
+  }
+  // Try each key variant until we find a match
+  for (const key of keys) {
+    const normalizedKey = key.toLowerCase().replace(/\s+/g, '_')
+    const stat = stats[normalizedKey] || stats[key]
+    if (stat) {
+      const home = typeof stat.home === 'number' ? stat.home : 0
+      const away = typeof stat.away === 'number' ? stat.away : 0
+      const total = home + away
+      if (debug) console.log(`[extractStatTotal] ${debug} - found ${key}: home=${home}, away=${away}, total=${total}`)
+      return Number.isFinite(total) ? total : 0
+    }
+  }
+  // If no stat found, we can't determine the result
+  if (debug) console.log(`[extractStatTotal] ${debug} - no matching stat found`)
+  return null
 }
 
 type ApplySettlementArgs = {
@@ -325,10 +344,10 @@ async function applySettlement({
     if (q.kind === 'future_score') {
       correctValue = { home: homeScore, away: awayScore }
     } else if (isFutureStatKind(q.kind)) {
-      const statKey = FUTURE_STAT_KEYS[q.kind]
-      const statValue = statTotals ? extractStatTotal(statTotals, statKey) : null
+      const statKeys = FUTURE_STAT_KEYS[q.kind]
+      const statValue = statTotals ? extractStatTotal(statTotals, statKeys, `question_${q.id}`) : null
       if (statValue === null) {
-        skipped.push(`question_${q.id}_stat_missing_${statKey}`)
+        skipped.push(`question_${q.id}_stat_missing_${statKeys.join('|')}`)
         continue
       }
       correctValue = statValue
@@ -351,10 +370,12 @@ async function getStatsForEvent(eventId: string): Promise<ScoreBusterMatchStatMa
   if (!eventId) return null
   if (!statsCache.has(eventId)) {
     try {
+      console.log(`[getStatsForEvent] Fetching stats for event ${eventId}`)
       const stats = await fetchMatchStats(eventId)
+      console.log(`[getStatsForEvent] Event ${eventId} stats:`, stats ? Object.keys(stats) : 'null')
       statsCache.set(eventId, stats)
     } catch (err) {
-      console.error('match stats fetch failed', eventId, err)
+      console.error('[getStatsForEvent] fetch failed', eventId, err)
       statsCache.set(eventId, null)
     }
   }

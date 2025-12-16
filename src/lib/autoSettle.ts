@@ -84,7 +84,7 @@ function createServiceClient() {
   return createClient(url, serviceKey)
 }
 
-async function hasPendingFutureQuestions(supabase: SupabaseClient, quizId: string) {
+export async function hasPendingFutureQuestions(supabase: SupabaseClient, quizId: string) {
   const { count, error } = await supabase
     .from('quiz_questions')
     .select('id', { count: 'exact', head: true })

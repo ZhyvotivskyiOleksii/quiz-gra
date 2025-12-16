@@ -31,6 +31,7 @@ type RawStatEntry = {
   name?: string | null
   value?: RawStatValue | null
   typeId?: string | number | null
+  group?: string | null
 }
 
 type RawStatGroup = {
@@ -38,9 +39,12 @@ type RawStatGroup = {
   statistics?: RawStatEntry[] | null
 }
 
+// API can return either:
+// 1. { stats: [{ name: "overall", statistics: [...] }] } - old format
+// 2. [{ name: "yellow_cards", value: {...}, group: "other" }] - /stats/football format
 type RawMatchStatsResponse = {
   stats?: RawStatGroup[] | null
-}
+} | RawStatEntry[]
 
 type RawMatchDetailsResponse = {
   id?: string | number | null
@@ -89,6 +93,15 @@ type StandingSplit = {
   percentageWins: number
 }
 
+class ScoreBusterError extends Error {
+  status: number
+  constructor(status: number, message?: string) {
+    super(message ?? `ScoreBuster API error ${status}`)
+    this.name = 'ScoreBusterError'
+    this.status = status
+  }
+}
+
 async function fetchJson<T>(
   path: string,
   query?: Record<string, string | number | undefined>,
@@ -100,7 +113,7 @@ async function fetchJson<T>(
   })
   const res = await fetch(url.toString())
   if (!res.ok) {
-    throw new Error(`ScoreBuster API error ${res.status}`)
+    throw new ScoreBusterError(res.status, `ScoreBuster API error ${res.status}`)
   }
   return (await res.json()) as T
 }
@@ -192,22 +205,95 @@ export async function fetchLeagueStandings(
 
 export type ScoreBusterMatchStatMap = Record<string, { home: number; away: number }>
 
+function normalizeMatchStats(
+  payload: RawMatchStatsResponse | null | undefined,
+): ScoreBusterMatchStatMap | null {
+  if (!payload) return null
+  
+  const stats: ScoreBusterMatchStatMap = {}
+  
+  // Format 2: flat array from /stats/football endpoint
+  // [{ name: "yellow_cards", value: { home: "1", away: "1" }, group: "other" }]
+  if (Array.isArray(payload)) {
+    for (const stat of payload) {
+      const statName = stat?.name?.toLowerCase()?.replace(/\s+/g, '_')
+      if (!statName) continue
+      const home = toScore(stat?.value?.home)
+      const away = toScore(stat?.value?.away)
+      // Allow 0 values - only skip if truly null/undefined
+      if (home === null && away === null) continue
+      stats[statName] = { home: home ?? 0, away: away ?? 0 }
+    }
+    if (Object.keys(stats).length) return stats
+  }
+  
+  // Format 1: nested structure { stats: [{ name: "overall", statistics: [...] }] }
+  const groups = (payload as { stats?: RawStatGroup[] | null })?.stats || []
+  
+  // Try "overall" group first
+  const overall = groups.find((group) => group?.name?.toLowerCase() === 'overall')
+  if (overall?.statistics?.length) {
+    for (const stat of overall.statistics) {
+      const statName = stat?.name?.toLowerCase()?.replace(/\s+/g, '_')
+      if (!statName) continue
+      const home = toScore(stat?.value?.home)
+      const away = toScore(stat?.value?.away)
+      if (home === null && away === null) continue
+      stats[statName] = { home: home ?? 0, away: away ?? 0 }
+    }
+  }
+  
+  // Fallback: try all groups
+  if (!Object.keys(stats).length) {
+    for (const group of groups) {
+      for (const stat of group?.statistics || []) {
+        const statName = stat?.name?.toLowerCase()?.replace(/\s+/g, '_')
+        if (!statName) continue
+        const home = toScore(stat?.value?.home)
+        const away = toScore(stat?.value?.away)
+        if (home === null && away === null) continue
+        stats[statName] = { home: home ?? 0, away: away ?? 0 }
+      }
+    }
+  }
+  
+  return Object.keys(stats).length ? stats : null
+}
+
 export async function fetchMatchStats(eventId: string): Promise<ScoreBusterMatchStatMap | null> {
   if (!eventId) return null
-  const payload = await fetchJson<RawMatchStatsResponse>(`/api/score/events/${eventId}/stats`)
-  const groups = payload?.stats || []
-  const overall = groups.find((group) => group?.name?.toLowerCase() === 'overall')
-  const stats: ScoreBusterMatchStatMap = {}
-  if (!overall?.statistics?.length) return null
-  for (const stat of overall.statistics || []) {
-    const statName = stat?.name
-    if (!statName) continue
-    const home = toScore(stat?.value?.home)
-    const away = toScore(stat?.value?.away)
-    if (home === null || away === null) continue
-    stats[statName] = { home, away }
+  const endpoints = [
+    `/api/score/events/${eventId}/stats/football`,
+    `/api/score/events/${eventId}/stats`,
+    `/api/score/matches/${eventId}/stats`,
+  ]
+
+  let lastError: unknown = null
+  for (const endpoint of endpoints) {
+    try {
+      const payload = await fetchJson<RawMatchStatsResponse>(endpoint)
+      const stats = normalizeMatchStats(payload)
+      if (stats) return stats
+    } catch (err) {
+      lastError = err
+      if (
+        endpoint.includes('/events/') &&
+        err instanceof ScoreBusterError &&
+        err.status === 404
+      ) {
+        continue
+      }
+      throw err
+    }
   }
-  return Object.keys(stats).length ? stats : null
+
+  if (lastError) {
+    if (lastError instanceof ScoreBusterError && lastError.status === 404) {
+      return null
+    }
+    throw lastError
+  }
+  return null
 }
 
 export type ScoreBusterStatusCategory =

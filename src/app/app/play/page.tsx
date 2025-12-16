@@ -28,14 +28,16 @@ export default async function PlayPage() {
     redirect('/?auth=login')
   }
 
+  const now = new Date().toISOString()
   const { data: rounds } = await supabase
     .from('rounds')
     .select(
       'id,label,deadline_at,leagues(name,code),matches(kickoff_at,home_team,away_team,home_team_external_id,away_team_external_id),quizzes(*)',
     )
-    .neq('status','draft')
-    .order('deadline_at',{ ascending: true })
-    .limit(8)
+    .eq('status', 'published')
+    .gte('deadline_at', now)
+    .order('deadline_at', { ascending: true })
+    .limit(10)
 
   function formatTimeLeft(deadline?: string | null) {
     if (!deadline) return null
@@ -53,11 +55,9 @@ export default async function PlayPage() {
   }
 
   const items = (rounds || [])
-    .filter((r:any) => {
-      // must have at least one quiz attached and be within time window
-      const hasQuiz = Array.isArray(r.quizzes) && r.quizzes.length > 0
-      if (!hasQuiz) return false
-      try { return new Date(r.deadline_at).getTime() > Date.now() } catch { return true }
+    .filter((r: any) => {
+      // must have at least one quiz attached
+      return Array.isArray(r.quizzes) && r.quizzes.length > 0
     })
 
   const quizIds = items
